@@ -1,9 +1,6 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-require_once __DIR__ . '/class-vendor-api-handler.php';
-require_once __DIR__ . '/class-vendor-price-processor.php';
-
 class Vendor_Product_Sync_Manager {
 
     public function __construct() {
@@ -75,6 +72,10 @@ class Vendor_Product_Sync_Manager {
     }
 
     public function handle_sync_request() {
+        
+        set_time_limit(300); // 5 دقیقه
+        ini_set('memory_limit', '512M');
+
         if (!current_user_can('manage_woocommerce')) wp_die('دسترسی غیرمجاز');
 
         $vendor_id = intval($_POST['vendor_id']);

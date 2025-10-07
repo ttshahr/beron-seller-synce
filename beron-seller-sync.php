@@ -12,10 +12,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // تعریف ثابت‌ها برای مسیرها
-define( 'MY_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
-define( 'MY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+define( 'Beron_Seller_Sync_PATH', plugin_dir_path( __FILE__ ) );
+define( 'Beron_Seller_Sync_URL', plugin_dir_url( __FILE__ ) );
 
 // اتولودر ساده یا اینکلود همه فایل‌های inc
-foreach ( glob( MY_PLUGIN_PATH . 'inc/*.php' ) as $file ) {
+foreach ( glob( Beron_Seller_Sync_PATH . 'inc/*.php' ) as $file ) {
     include_once $file;
 }
