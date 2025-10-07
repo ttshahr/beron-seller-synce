@@ -19,16 +19,3 @@ define( 'MY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 foreach ( glob( MY_PLUGIN_PATH . 'inc/*.php' ) as $file ) {
     include_once $file;
 }
-
-// نمونه: اجرای فانکشنی بعد از لود پلاگین
-add_action( 'plugins_loaded', 'my_plugin_init' );
-function my_plugin_init() {
-    // اینجا می‌تونی کلاس‌ها رو اینیت کنی یا فانکشن‌های اولیه رو اجرا کنی
-    // if ( class_exists( 'My_Plugin_Admin' ) ) {
-    //     new My_Plugin_Admin();
-    // }
-
-    // if ( class_exists( 'My_Plugin_Frontend' ) ) {
-    //     new My_Plugin_Frontend();
-    // }
-}
