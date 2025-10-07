@@ -1,54 +1,60 @@
-jQuery(document).ready(function($){
-    $('#vendor-sync-form').on('submit', function(e){
-        e.preventDefault();
-        var data = { action: 'vendor_sync_batch', step: 1 };
-        $.post(ajaxurl, data, function(response){
-            alert('شروع شد: ' + response);
-        });
-    });
-});
-
-
 jQuery(document).ready(function($) {
+    var step = 1;
+    var totalSteps = 1;
+    var vendorId = $('#vendor_id').val();
+    var productCat = $('#product_cat').val();
 
-    $('#vendor-sync-form').on('submit', function(e) {
-        e.preventDefault();
+    // بروزرسانی نوار پیشرفت
+    function updateProgressBar() {
+        var progress = (step / totalSteps) * 100;
+        $('#progress-bar').css('width', progress + '%');
+        $('#progress-text').text('در حال پردازش: ' + Math.round(progress) + '%');
+    }
 
-        var vendor_id = $('#vendor_id').val();
-        var product_cat = $('#product_cat').val();
-        var sync_type = $('#sync_type').val();
-
-        if (!vendor_id) return alert('فروشنده را انتخاب کنید.');
-
-        $('#vendor-sync-progress').remove();
-        var progressBar = $('<div id="vendor-sync-progress" style="width:100%;border:1px solid #ccc;margin-top:10px;"><div style="width:0%;height:25px;background:#0073aa;color:#fff;text-align:center;">0%</div></div>');
-        $('#vendor-sync-form').after(progressBar);
-
-        function syncBatch(offset) {
-            $.post(vendorSync.ajax_url, {
-                action: 'vendor_sync_batch',
-                nonce: vendorSync.nonce,
-                vendor_id: vendor_id,
-                product_cat: product_cat,
-                sync_type: sync_type,
-                offset: offset
-            }, function(response) {
+    // ارسال درخواست AJAX برای پردازش دسته‌ای محصولات
+    function processStep() {
+        $.ajax({
+            url: ajaxurl,
+            method: 'POST',
+            data: {
+                action: 'sync_vendor_products_batch',
+                step: step,
+                vendor_id: vendorId,
+                product_cat: productCat
+            },
+            success: function(response) {
                 if (response.success) {
-                    var percent = response.data.percent;
-                    $('#vendor-sync-progress div').css('width', percent + '%').text(percent + '%');
-
-                    if (!response.data.done) {
-                        syncBatch(response.data.next_offset);
+                    if (response.data.message === 'تمام شد') {
+                        $('#progress-text').text('تمام شد');
                     } else {
-                        alert('بروزرسانی محصولات کامل شد.');
+                        step = response.data.next_step;
+                        updateProgressBar();
+                        processStep();
                     }
                 } else {
-                    alert('خطا در همگام‌سازی.');
+                    $('#progress-text').text('خطا در پردازش');
                 }
-            });
-        }
+            },
+            error: function() {
+                $('#progress-text').text('خطا در ارتباط با سرور');
+            }
+        });
+    }
 
-        syncBatch(0);
+    // شروع پردازش با کلیک روی دکمه
+    $('#sync-button').click(function() {
+        $('#sync-button').prop('disabled', true);
+        $('#progress-container').show();
+        processStep();
     });
 
+    // بروزرسانی مقادیر فروشنده و دسته‌بندی محصولات
+    $('#vendor_id, #product_cat').change(function() {
+        vendorId = $('#vendor_id').val();
+        productCat = $('#product_cat').val();
+        $('#sync-button').prop('disabled', !vendorId);
+    });
+
+    // غیرفعال کردن دکمه شروع تا زمانی که فروشنده انتخاب نشده باشد
+    $('#sync-button').prop('disabled', !vendorId);
 });
