@@ -2,7 +2,7 @@
 /**
  * Plugin Name: همگام سازی برون
  * Description: همگام سازی محصولات، فروشندگان، و سفارشات برون
- * Version: 1.0.1
+ * Version: 1.0.0
  * Author: ویرانت
  * Text Domain: beron-seller-sync
  */
