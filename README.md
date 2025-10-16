@@ -57,7 +57,6 @@ beron-seller-sync/
 │   ├── ❌ class-vendor-raw-price-saver.php      # نسخه قدیمی
 │   ├── ❌ class-vendor-stock-updater.php        # نسخه قدیمی  
 │   ├── ❌ class-vendor-sync-batch-processor.php # تکراری
-│   └── ❌ class-vendor-progress-ui.php          # تکراری
 │
 ├── 📁 assets/                               # فایل‌های استاتیک
 │   ├── 🎨 progress.css                      # استایل نوار پیشرفت

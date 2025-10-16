@@ -2,7 +2,7 @@
 /**
  * Plugin Name: همگام سازی برون
  * Description: همگام سازی محصولات، فروشندگان، و سفارشات برون
- * Version: 3.0.4
+ * Version: 3.0.5
  * Author: ویرانت
  * Text Domain: beron-seller-sync
  * Update URI: https://github.com/ttshahr/beron-seller-synce
