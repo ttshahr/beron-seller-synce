@@ -1,6 +1,4 @@
 <?php
-
-
 // اضافه کردن سیستم آپدیت خودکار از گیتهاب
 add_filter('pre_set_site_transient_update_plugins', 'beron_check_github_updates');
 add_filter('upgrader_post_install', 'beron_fix_update_folder', 10, 3);
@@ -10,7 +8,6 @@ function beron_check_github_updates($transient) {
         return $transient;
     }
 
-    // مسیر صحیح افزونه
     $plugin_file = 'beron-seller-synce/beron-seller-sync.php';
     
     if (!isset($transient->checked[$plugin_file])) {
@@ -53,25 +50,86 @@ function beron_fix_update_folder($true, $hook_extra, $result) {
     $plugin_dir = WP_PLUGIN_DIR . '/beron-seller-synce/';
     $temp_dir = $result['destination'];
     
-    error_log("🔄 Fixing update folder: {$temp_dir} -> {$plugin_dir}");
+    error_log("🔄 Starting folder fix: {$temp_dir} -> {$plugin_dir}");
     
-    // اگر پوشه مقصد وجود داره، پاکش کن
+    // محتوای پوشه temp رو بگیر
+    $temp_items = $wp_filesystem->dirlist($temp_dir);
+    
+    if (!$temp_items) {
+        error_log("❌ No items found in temp directory");
+        return $true;
+    }
+    
+    // فقط باید یک پوشه در temp باشه (beron-seller-synce-3.0.3)
+    $temp_folders = array_filter($temp_items, function($item) {
+        return $item['type'] === 'd' && strpos($item['name'], 'beron-seller-synce') === 0;
+    });
+    
+    if (count($temp_folders) !== 1) {
+        error_log("❌ Expected exactly one beron folder, found: " . count($temp_folders));
+        return $true;
+    }
+    
+    $versioned_folder_name = key($temp_folders);
+    $versioned_folder_path = $temp_dir . '/' . $versioned_folder_name . '/';
+    
+    error_log("🔄 Found versioned folder: {$versioned_folder_name}");
+    error_log("🔄 Versioned folder path: {$versioned_folder_path}");
+    
+    // محتوای پوشه versioned رو بگیر
+    $versioned_items = $wp_filesystem->dirlist($versioned_folder_path);
+    
+    if (!$versioned_items) {
+        error_log("❌ No items found in versioned folder");
+        return $true;
+    }
+    
+    error_log("🔄 Items in versioned folder: " . implode(', ', array_keys($versioned_items)));
+    
+    // پوشه اصلی رو پاک کن (اما اول مطمئن شو پوشه درسته)
     if ($wp_filesystem->exists($plugin_dir)) {
+        error_log("🔄 Deleting old plugin directory: {$plugin_dir}");
         $wp_filesystem->delete($plugin_dir, true);
     }
     
-    // محتوای پوشه موقت رو به پوشه اصلی منتقل کن
-    $move_result = $wp_filesystem->move($temp_dir, $plugin_dir);
-    
-    if ($move_result) {
-        error_log("✅ Successfully moved files to correct folder");
-        // پوشه موقت رو پاک کن
-        $wp_filesystem->delete($result['destination']);
-    } else {
-        error_log("❌ Failed to move files to correct folder");
+    // ایجاد پوشه اصلی دوباره
+    if (!$wp_filesystem->mkdir($plugin_dir)) {
+        error_log("❌ Failed to create plugin directory");
+        return $true;
     }
     
-    return $move_result ? $move_result : $true;
+    // هر فایل/پوشه از پوشه versioned رو به پوشه اصلی منتقل کن
+    $all_moved = true;
+    foreach ($versioned_items as $item_name => $item_info) {
+        $source_path = $versioned_folder_path . $item_name;
+        $destination_path = $plugin_dir . $item_name;
+        
+        if ($item_info['type'] === 'd') {
+            // برای پوشه‌ها
+            $move_result = $wp_filesystem->move($source_path, $destination_path);
+        } else {
+            // برای فایل‌ها
+            $move_result = $wp_filesystem->move($source_path, $destination_path);
+        }
+        
+        if (!$move_result) {
+            error_log("❌ Failed to move: {$item_name}");
+            $all_moved = false;
+        } else {
+            error_log("✅ Successfully moved: {$item_name}");
+        }
+    }
+    
+    if ($all_moved) {
+        error_log("✅ All files moved successfully to: {$plugin_dir}");
+        // پوشه temp رو پاک کن
+        $wp_filesystem->delete($temp_dir, true);
+        error_log("✅ Temp directory cleaned up");
+    } else {
+        error_log("❌ Some files failed to move");
+    }
+    
+    return $all_moved;
 }
 
 function beron_get_github_release_info($username, $repo) {
