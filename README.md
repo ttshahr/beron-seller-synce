@@ -35,6 +35,7 @@ beron-seller-sync/
 ├── 📄 uninstall.php                        # فایل حذف افزونه
 │
 ├── 📁 inc/                                 # هسته اصلی افزونه
+|   ├── 🆕 update-core.php                  # فایل جدید سیستم آپدیت
 │   ├── 🎯 class-vendor-product-sync-manager.php    # مدیریت اصلی
 │   ├── 🔌 class-vendor-api-handler.php            # ارتباط با API
 │   ├── 🔌 class-vendor-api-optimizer.php          # بهینه‌سازی API
@@ -47,7 +48,6 @@ beron-seller-sync/
 │   ├── 📝 class-vendor-logger.php                # سیستم لاگ‌گیری
 │   ├── 🔧 class-vendor-debug-helper.php          # ابزار دیباگ
 │   ├── ⚡ class-vendor-ajax-handler.php          # هندلرهای AJAX
-│   ├── 📊 class-admin.php                       # مدیریت پیشخوان
 │   ├── 🏷️ admin-columns.php                    # ستون‌های پیشخوان
 │   ├── 🏷️ define-hamkar-and-seller-meta.php    # تعریف متاهای فروشنده
 │   ├── 🏷️ define-product-meta.php              # تعریف متاهای محصول
@@ -63,11 +63,10 @@ beron-seller-sync/
 │   └── ⚡ progress.js                       # اسکریپت نوار پیشرفت
 │
 ├── 📁 logs/                                 # پوشه لاگ‌ها (جدید)
-│   ├── 📄 vendor-sync-errors.log           # خطاها
-│   ├── 📄 vendor-sync-success.log          # موفقیت‌ها  
-│   └── 📄 vendor-sync-api.log              # لاگ API
-│
-└── 📁 .git/                                # گیت (کنترل نسخه)
+    ├── 📄 vendor-sync-errors.log           # خطاها
+    ├── 📄 vendor-sync-success.log          # موفقیت‌ها  
+    └── 📄 vendor-sync-api.log              # لاگ API
+
 
 
 
