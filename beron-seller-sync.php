@@ -3,7 +3,7 @@
  * Plugin Name: همگام سازی برون
  * Plugin URI: https://github.com/ttshahr/beron-seller-synce
  * Description: افزونه حرفه‌ای همگام‌سازی محصولات، قیمت‌ها و موجودی با فروشندگان مختلف. قابلیت مدیریت چند فروشنده، پردازش دسته‌ای، لاگ‌گیری پیشرفته و رابط کاربری فارسی.
- * Version: 3.0.6
+ * Version: 3.1.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Tested up to: 6.6
@@ -28,6 +28,6 @@ define( 'Beron_Seller_Sync_PATH', plugin_dir_path( __FILE__ ) );
 define( 'Beron_Seller_Sync_URL', plugin_dir_url( __FILE__ ) );
 
 foreach ( glob( Beron_Seller_Sync_PATH . 'inc/*.php' ) as $file ) {
-    
+
         include_once $file;
 }
