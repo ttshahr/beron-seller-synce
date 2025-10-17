@@ -10,7 +10,7 @@ class Vendor_Product_Assigner {
     public static function assign_vendor_to_products($vendor_id) {
         // افزایش محدودیت‌ها
         set_time_limit(600); // 10 دقیقه
-        ini_set('memory_limit', '512M');
+        ini_set('memory_limit', '2048M');
         wp_suspend_cache_addition(true);
         
         $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
@@ -203,43 +203,110 @@ class Vendor_Product_Assigner {
     /**
      * 🆕 بررسی وضعیت اختصاص
      */
-    public static function get_assignment_status($vendor_id) {
-        global $wpdb;
+    // public static function get_assignment_status($vendor_id) {
+    //     global $wpdb;
         
-        $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
+    //     $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
         
-        // تست اتصال
-        $connection_test = Vendor_API_Optimizer::test_connection($meta);
+    //     // تست اتصال
+    //     $connection_test = Vendor_API_Optimizer::test_connection($meta);
         
-        // تعداد محصولات محلی این فروشنده
-        $local_count = self::get_vendor_products_count($vendor_id);
+    //     // تعداد محصولات محلی این فروشنده
+    //     $local_count = self::get_vendor_products_count($vendor_id);
         
-        // تعداد محصولات فروشنده
-        $vendor_products = Vendor_API_Optimizer::get_all_products($meta);
-        $vendor_count = $vendor_products ? count($vendor_products) : 0;
+    //     // تعداد محصولات فروشنده
+    //     $vendor_products = Vendor_API_Optimizer::get_all_products($meta);
+    //     $vendor_count = $vendor_products ? count($vendor_products) : 0;
         
-        // تعداد محصولات با قیمت اما بدون اختصاص
-        $products_with_price = $wpdb->get_var("
-            SELECT COUNT(DISTINCT p.ID)
-            FROM {$wpdb->posts} p 
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
-            LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_vendor_id'
-            WHERE p.post_type = 'product' 
-            AND p.post_status = 'publish' 
-            AND pm.meta_key = '_seller_list_price' 
-            AND pm.meta_value > '0'
-            AND pm2.meta_id IS NULL
-            AND p.post_author = {$vendor_id}
-        ");
+    //     // تعداد محصولات با قیمت اما بدون اختصاص
+    //     $products_with_price = $wpdb->get_var("
+    //         SELECT COUNT(DISTINCT p.ID)
+    //         FROM {$wpdb->posts} p 
+    //         INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+    //         LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_vendor_id'
+    //         WHERE p.post_type = 'product' 
+    //         AND p.post_status = 'publish' 
+    //         AND pm.meta_key = '_seller_list_price' 
+    //         AND pm.meta_value > '0'
+    //         AND pm2.meta_id IS NULL
+    //         AND p.post_author = {$vendor_id}
+    //     ");
         
-        return [
-            'connection' => $connection_test,
-            'vendor_products_count' => $vendor_count,
-            'assigned_products_count' => $local_count,
-            'products_with_price_unassigned' => $products_with_price,
-            'recommendation' => self::get_recommendation($vendor_count, $local_count, $products_with_price)
-        ];
+    //     return [
+    //         'connection' => $connection_test,
+    //         'vendor_products_count' => $vendor_count,
+    //         'assigned_products_count' => $local_count,
+    //         'products_with_price_unassigned' => $products_with_price,
+    //         'recommendation' => self::get_recommendation($vendor_count, $local_count, $products_with_price)
+    //     ];
+    // }
+
+
+
+/**
+ * 🆕 بررسی وضعیت اختصاص (بهینه‌شده)
+ */
+public static function get_assignment_status($vendor_id) {
+    global $wpdb;
+    
+    $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
+    
+    // تست اتصال (سبک - فقط بررسی اتصال)
+    $connection_test = Vendor_API_Optimizer::test_connection($meta);
+    
+    // تعداد محصولات محلی این فروشنده
+    $local_count = self::get_vendor_products_count($vendor_id);
+    
+    // 🆕 جدید: دریافت تعداد محصولات فروشنده از header API (بدون دانلود محصولات)
+    $vendor_count = self::get_vendor_products_count_from_api($meta);
+    
+    // تعداد محصولات با قیمت اما بدون اختصاص
+    $products_with_price = $wpdb->get_var($wpdb->prepare("
+        SELECT COUNT(DISTINCT p.ID)
+        FROM {$wpdb->posts} p 
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+        LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_vendor_id'
+        WHERE p.post_type = 'product' 
+        AND p.post_status = 'publish' 
+        AND pm.meta_key = '_seller_list_price' 
+        AND pm.meta_value > '0'
+        AND pm2.meta_id IS NULL
+        AND p.post_author = %d
+    ", $vendor_id));
+    
+    return [
+        'connection' => $connection_test,
+        'vendor_products_count' => $vendor_count,
+        'assigned_products_count' => $local_count,
+        'products_with_price_unassigned' => $products_with_price,
+        'recommendation' => self::get_recommendation($vendor_count, $local_count, $products_with_price)
+    ];
+}
+
+/**
+ * 🆕 جدید: دریافت تعداد محصولات فروشنده از header API (بدون دانلود محصولات)
+ */
+private static function get_vendor_products_count_from_api($meta) {
+    $api_url = trailingslashit($meta['url']) . 'wp-json/wc/v3/products';
+    $auth = base64_encode($meta['key'] . ':' . $meta['secret']);
+    
+    $response = wp_remote_get(add_query_arg(['per_page' => 1], $api_url), [
+        'headers' => [
+            'Authorization' => 'Basic ' . $auth,
+            'User-Agent' => 'VendorSync/1.0'
+        ],
+        'timeout' => 10,
+    ]);
+    
+    if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+        return 0;
     }
+    
+    $total_products = wp_remote_retrieve_header($response, 'x-wp-total');
+    return $total_products ? intval($total_products) : 0;
+}
+
+
     
     /**
      * پیشنهاد هوشمند

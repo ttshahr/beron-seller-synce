@@ -66,7 +66,7 @@ class Vendor_API_Optimizer {
                 'Authorization' => 'Basic ' . $auth,
                 'User-Agent' => 'VendorSync/1.0'
             ],
-            'timeout' => 45,
+            'timeout' => 300,
         ]);
         
         $response_time = round(microtime(true) - $start_time, 2);

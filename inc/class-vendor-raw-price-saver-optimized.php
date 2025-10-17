@@ -6,100 +6,205 @@ class Vendor_Raw_Price_Saver_Optimized {
     public static function save_raw_prices_optimized($vendor_id, $cat_id) {
         $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
         
-        set_time_limit(600);
-        ini_set('memory_limit', '512M');
+        set_time_limit(1000);
+        ini_set('memory_limit', '2048M');
         wp_suspend_cache_addition(true);
         
-        Vendor_Logger::log_success(0, 'process_started', 
-            'شروع ذخیره قیمت‌های خام برای فروشنده: ' . $vendor_id);
-        
-        // دریافت تمام محصولات از API یکجا
-        $vendor_products = Vendor_API_Optimizer::get_all_products($meta);
-        if (empty($vendor_products)) {
-            throw new Exception('هیچ محصولی از API فروشنده دریافت نشد.');
-        }
-        
-        Vendor_Logger::log_success(0, 'vendor_products_received', 
-            'تعداد محصولات دریافت شده از فروشنده: ' . count($vendor_products));
-        
-        // ایجاد نقشه SKU به محصول برای جستجوی سریع
-        $vendor_products_map = [];
-        foreach ($vendor_products as $vp) {
-            if (!empty($vp['sku'])) {
-                $clean_sku = trim($vp['sku']);
-                $vendor_products_map[$clean_sku] = $vp;
-            }
-        }
-        
-        Vendor_Logger::log_success(0, 'vendor_products_map_created', 
-            'تعداد محصولات در map: ' . count($vendor_products_map));
+        Vendor_Logger::log_info("Starting raw price sync for vendor {$vendor_id}", $vendor_id);
         
         // دریافت محصولات محلی
         $local_products = self::get_local_products_with_sku($cat_id, $vendor_id);
         
-        Vendor_Logger::log_success(0, 'local_products_found', 
-            'تعداد محصولات محلی پیدا شده: ' . count($local_products));
+        if (empty($local_products)) {
+            Vendor_Logger::log_warning("No local products found for price sync", null, $vendor_id);
+            throw new Exception('هیچ محصولی برای این فروشنده یافت نشد.');
+        }
+        
+        Vendor_Logger::log_info("Found " . count($local_products) . " local products to process", $vendor_id);
+        
+        // 🆕 جدید: دریافت فقط محصولات مورد نیاز از API
+        $vendor_products_map = self::get_vendor_products_map($meta, $vendor_id, $local_products);
+        
+        if (empty($vendor_products_map)) {
+            Vendor_Logger::log_error("No matching products found in vendor API", null, $vendor_id);
+            throw new Exception('هیچ محصول مطابقی در فروشنده یافت نشد.');
+        }
+        
+        Vendor_Logger::log_info("Vendor products map created with " . count($vendor_products_map) . " matched products", $vendor_id);
         
         $saved_count = 0;
-        $skus_processed = [];
+        $processed_count = 0;
         
         foreach ($local_products as $index => $local_product) {
+            $processed_count++;
             $sku = $local_product['sku'];
             $product_id = $local_product['id'];
             
-            $skus_processed[] = $sku;
-            
             if (isset($vendor_products_map[$sku])) {
                 $vendor_product = $vendor_products_map[$sku];
-                $raw_price = self::extract_raw_price($vendor_product, $meta);
-                
-                Vendor_Logger::log_success($product_id, 'price_extracted', 
-                    'قیمت استخراج شده: ' . $raw_price . ' برای SKU: ' . $sku);
+                $raw_price = self::extract_raw_price($vendor_product, $meta, $vendor_id);
                 
                 if ($raw_price > 0) {
-                    // ذخیره در متای مورد نظر شما
+                    // ذخیره قیمت‌ها
                     $saved1 = update_post_meta($product_id, '_seller_list_price', $raw_price);
                     $saved2 = update_post_meta($product_id, '_vendor_raw_price', $raw_price);
                     $saved3 = update_post_meta($product_id, '_vendor_last_sync', current_time('mysql'));
-                    
-                    // 🆕 همچنین فروشنده رو هم اختصاص بده
                     $saved4 = update_post_meta($product_id, '_vendor_id', $vendor_id);
                     
                     if ($saved1 !== false) {
                         $saved_count++;
-                        Vendor_Logger::log_success($product_id, 'price_saved', 
-                            'قیمت ذخیره شد: ' . $raw_price . ' در _seller_list_price - محصول به فروشنده اختصاص داده شد');
+                        Vendor_Logger::log_success(
+                            $product_id, 
+                            'price_saved', 
+                            $vendor_id, 
+                            "Price saved: {$raw_price} for SKU: {$sku} - Product assigned to vendor"
+                        );
                     } else {
-                        Vendor_Logger::log_error('خطا در ذخیره قیمت برای محصول: ' . $product_id, $product_id);
+                        Vendor_Logger::log_error("Failed to save price for product: {$product_id}", $product_id, $vendor_id);
                     }
                 } else {
-                    Vendor_Logger::log_error('قیمت نامعتبر: ' . $raw_price . ' برای SKU: ' . $sku, $product_id);
+                    Vendor_Logger::log_warning("Invalid price: {$raw_price} for SKU: {$sku}", $product_id, $vendor_id);
                 }
             } else {
-                Vendor_Logger::log_success($product_id, 'sku_not_found_in_vendor', 
-                    'SKU در فروشنده یافت نشد: ' . $sku);
+                Vendor_Logger::log_warning("SKU not found in vendor: {$sku}", $product_id, $vendor_id);
             }
             
-            // آزادسازی حافظه
-            if ($index % 50 === 0) {
+            // گزارش پیشرفت
+            if ($processed_count % 50 === 0) {
+                Vendor_Logger::log_info(
+                    "Progress: {$processed_count}/" . count($local_products) . " processed, {$saved_count} saved", 
+                    $vendor_id
+                );
                 wp_cache_flush();
                 gc_collect_cycles();
-                
-                Vendor_Logger::log_success(0, 'progress', 
-                    'پردازش ' . $index . ' از ' . count($local_products) . ' - ذخیره شده: ' . $saved_count);
             }
         }
         
-        // گزارش نهایی
-        Vendor_Logger::log_success(0, 'process_completed', 
-            'ذخیره قیمت‌ها کامل شد. تعداد ذخیره شده: ' . $saved_count . ' از ' . count($local_products));
-        
-        if (!empty($skus_processed)) {
-            Vendor_Logger::log_success(0, 'skus_processed', 
-                'تعداد SKUهای پردازش شده: ' . count($skus_processed));
-        }
+        Vendor_Logger::log_success(
+            0, 
+            'price_sync_completed', 
+            $vendor_id, 
+            "Price sync completed: {$saved_count} products saved from {$processed_count} processed"
+        );
         
         return $saved_count;
+    }
+    
+    /**
+     * 🆕 جدید: دریافت map محصولات فروشنده (بهینه‌شده)
+     */
+    private static function get_vendor_products_map($meta, $vendor_id, $local_products) {
+        if (empty($local_products)) {
+            return [];
+        }
+        
+        Vendor_Logger::log_info("Fetching vendor products for " . count($local_products) . " local products", $vendor_id);
+        
+        // استخراج SKUهای محلی
+        $local_skus = [];
+        foreach ($local_products as $product) {
+            if (!empty($product['sku'])) {
+                $local_skus[] = $product['sku'];
+            }
+        }
+        
+        if (empty($local_skus)) {
+            Vendor_Logger::log_warning("No local SKUs found", null, $vendor_id);
+            return [];
+        }
+        
+        Vendor_Logger::log_info("Found " . count($local_skus) . " local SKUs to check", $vendor_id);
+        
+        // دریافت فقط محصولات مورد نیاز از API
+        $vendor_products = self::get_specific_vendor_products($meta, $vendor_id, $local_skus);
+        
+        $products_map = [];
+        
+        foreach ($vendor_products as $product) {
+            if (!empty($product['sku'])) {
+                $clean_sku = trim($product['sku']);
+                $products_map[$clean_sku] = $product;
+            }
+        }
+        
+        Vendor_Logger::log_info("Vendor products map created with " . count($products_map) . " matched products", $vendor_id);
+        
+        return $products_map;
+    }
+    
+    /**
+     * 🆕 جدید: دریافت محصولات خاص از API بر اساس SKU
+     */
+    private static function get_specific_vendor_products($meta, $vendor_id, $skus) {
+        if (empty($skus)) {
+            return [];
+        }
+        
+        $vendor_products = [];
+        $batch_size = 50;
+        
+        Vendor_Logger::log_info("Fetching " . count($skus) . " specific products from vendor API", $vendor_id);
+        
+        foreach (array_chunk($skus, $batch_size) as $batch_index => $sku_batch) {
+            Vendor_Logger::log_info("Processing SKU batch " . ($batch_index + 1), $vendor_id);
+            
+            $batch_products = self::get_vendor_products_by_skus($meta, $vendor_id, $sku_batch);
+            $vendor_products = array_merge($vendor_products, $batch_products);
+            
+            // تاخیر بین batch ها
+            if (count($skus) > $batch_size) {
+                sleep(1);
+            }
+        }
+        
+        return $vendor_products;
+    }
+    
+    /**
+     * 🆕 جدید: دریافت محصولات فروشنده بر اساس SKUهای خاص
+     */
+    private static function get_vendor_products_by_skus($meta, $vendor_id, $skus) {
+        $api_url = trailingslashit($meta['url']) . 'wp-json/wc/v3/products';
+        $auth = base64_encode($meta['key'] . ':' . $meta['secret']);
+        
+        $products = [];
+        $found_count = 0;
+        $not_found_count = 0;
+        
+        foreach ($skus as $sku) {
+            $clean_sku = trim($sku);
+            
+            $response = wp_remote_get(add_query_arg('sku', $clean_sku, $api_url), [
+                'headers' => [
+                    'Authorization' => 'Basic ' . $auth,
+                    'User-Agent' => 'VendorSync/1.0'
+                ],
+                'timeout' => 15,
+            ]);
+            
+            if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+                $data = json_decode(wp_remote_retrieve_body($response), true);
+                if (!empty($data) && isset($data[0])) {
+                    $products[] = $data[0];
+                    $found_count++;
+                    Vendor_Logger::log_debug("Found vendor product for SKU: {$clean_sku}", null, $vendor_id);
+                } else {
+                    $not_found_count++;
+                    Vendor_Logger::log_warning("Vendor product not found for SKU: {$clean_sku}", null, $vendor_id);
+                }
+            } else {
+                $not_found_count++;
+                $error_msg = is_wp_error($response) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
+                Vendor_Logger::log_error("API error for SKU {$clean_sku}: {$error_msg}", null, $vendor_id);
+            }
+            
+            // تاخیر کوچک بین درخواست‌ها
+            usleep(200000); // 0.2 ثانیه
+        }
+        
+        Vendor_Logger::log_info("SKU batch result: {$found_count} found, {$not_found_count} not found", $vendor_id);
+        
+        return $products;
     }
     
     private static function get_local_products_with_sku($cat_id, $vendor_id) {
@@ -113,7 +218,7 @@ class Vendor_Raw_Price_Saver_Optimized {
                 AND pm.meta_key = '_sku' 
                 AND pm.meta_value != ''";
         
-        // اگر دسته انتخاب شده، فیلتر کن
+        // فیلتر بر اساس دسته
         if ($cat_id !== 'all') {
             $sql .= " AND p.ID IN (
                 SELECT object_id FROM {$wpdb->term_relationships} 
@@ -121,23 +226,20 @@ class Vendor_Raw_Price_Saver_Optimized {
             )";
         }
         
-        // 🆕 از نویسنده (author) برای فیلتر کردن استفاده کن
+        // فیلتر بر اساس مالک
         $vendor_user = get_userdata($vendor_id);
         if ($vendor_user) {
             $sql .= " AND p.post_author = {$vendor_id}";
         }
         
-        Vendor_Logger::log_success(0, 'sql_query', 'کوئری اجرا شده: ' . $sql);
-        
         $results = $wpdb->get_results($sql, ARRAY_A);
         
-        Vendor_Logger::log_success(0, 'local_products_query', 
-            'تعداد محصولات محلی با SKU: ' . count($results));
+        Vendor_Logger::log_info("Local products query returned " . count($results) . " results", $vendor_id);
         
         return $results;
     }
     
-    private static function extract_raw_price($vendor_product, $meta) {
+    private static function extract_raw_price($vendor_product, $meta, $vendor_id) {
         $price_meta_key = $meta['price_meta_key'];
         $cooperation_price = 0;
         
@@ -146,8 +248,7 @@ class Vendor_Raw_Price_Saver_Optimized {
             foreach ($vendor_product['meta_data'] as $m) {
                 if ($m['key'] === $price_meta_key && !empty($m['value'])) {
                     $cooperation_price = floatval($m['value']);
-                    Vendor_Logger::log_success(0, 'price_from_meta', 
-                        'قیمت از متا استخراج شد: ' . $cooperation_price . ' با کلید: ' . $price_meta_key);
+                    Vendor_Logger::log_debug("Price extracted from meta: {$cooperation_price} with key: {$price_meta_key}", null, $vendor_id);
                     break;
                 }
             }
@@ -156,20 +257,17 @@ class Vendor_Raw_Price_Saver_Optimized {
         // Fallback به قیمت معمولی
         if (!$cooperation_price && isset($vendor_product['price'])) {
             $cooperation_price = floatval($vendor_product['price']);
-            Vendor_Logger::log_success(0, 'price_from_regular', 
-                'قیمت از regular_price استخراج شد: ' . $cooperation_price);
+            Vendor_Logger::log_debug("Price extracted from regular_price: {$cooperation_price}", null, $vendor_id);
         }
         
         // تبدیل ریال به تومان اگر نیاز باشد
         if ($meta['currency'] === 'rial' && $cooperation_price > 0) {
             $old_price = $cooperation_price;
             $cooperation_price = $cooperation_price / 10;
-            Vendor_Logger::log_success(0, 'currency_conversion', 
-                'تبدیل ریال به تومان: ' . $old_price . ' → ' . $cooperation_price);
+            Vendor_Logger::log_debug("Currency conversion: {$old_price} rial → {$cooperation_price} toman", null, $vendor_id);
         }
         
-        Vendor_Logger::log_success(0, 'final_price', 
-            'قیمت نهایی: ' . $cooperation_price);
+        Vendor_Logger::log_debug("Final price: {$cooperation_price}", null, $vendor_id);
         
         return $cooperation_price;
     }
