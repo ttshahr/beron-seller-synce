@@ -13,7 +13,7 @@ class Vendor_Ajax_Handler {
         add_action('wp_ajax_get_stocks_progress', [$this, 'get_stocks_progress']);
         add_action('wp_ajax_get_assignment_status', [$this, 'get_assignment_status']);
         
-        Vendor_Logger::log_info('Vendor AJAX Handler initialized');
+        // Vendor_Logger::log_info('Vendor AJAX Handler initialized');
     }
     
     /**
