@@ -96,6 +96,12 @@ public static function render_main_page() {
         <?php
     }
     
+    public static function render_profit_page() {
+        // ✅ مستقیماً از کلاس استفاده می‌کنیم
+        $profit_calculator = new Sale_Profit_Calculator();
+        $profit_calculator->render_page();
+    }
+    
     public static function render_common_stats() {
         $products_with_raw_price = self::count_products_with_meta('_seller_list_price');
         $products_with_final_price = self::count_products_with_meta('_vendor_final_price');
