@@ -33,6 +33,11 @@ beron-seller-synce/
 ├── 📄 README.md                                        # مستندات
 ├── 📄 CHANGELOG.md                                     # تاریخچه تغییرات
 ├── 📄 uninstall.php                                    # فایل حذف افزونه
+├── 📁 meta/                          # مدیریت متاها
+│   ├── 🏷️ meta-definitions.php
+│   ├── 🔧 class-meta-handler.php
+│   ├── 📦 class-product-meta.php
+│   └── 👤 class-user-meta.php
 ├── 📁 inc/                                             # هسته اصلی افزونه
 │   ├── 🏷️ admin-columns.php                            # ستون‌های پیشخوان
 │   ├── 💰 class-sale-profit-calculator.php             # محاسبه سود فروش
@@ -40,14 +45,11 @@ beron-seller-synce/
 │   ├── 🔌 class-vendor-api-optimizer.php               # بهینه‌سازی API
 │   ├── 🔧 class-vendor-debug-helper.php                # ابزار دیباگ
 │   ├── 📝 class-vendor-logger.php                      # سیستم لاگ‌گیری
-│   ├── 🏷️ class-vendor-meta-handler.php                # مدیریت متاها
 │   ├── 💰 class-vendor-price-calculator.php            # محاسبه قیمت نهایی
 │   ├── 👤 class-vendor-product-assigner.php            # اختصاص محصولات
 │   ├── 🎯 class-vendor-product-sync-manager.php        # مدیریت اصلی
 │   ├── 💾 class-vendor-raw-price-saver-optimized.php   # ذخیره قیمت (اصلی)
 │   ├── 📦 class-vendor-stock-updater-optimized.php     # بروزرسانی موجودی (اصلی)
-│   ├── 🏷️ define-hamkar-and-seller-meta.php            # تعریف متاهای فروشنده
-│   ├── 🏷️ define-product-meta.php                      # تعریف متاهای محصول
 |   ├── 🆕 update-core.php                              # فایل جدید سیستم آپدیت
 ├── 📁 assets/                                          # فایل‌های استاتیک
 │   ├── 🎨 progress.css                                 # استایل نوار پیشرفت
