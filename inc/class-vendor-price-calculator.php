@@ -12,14 +12,14 @@ class Vendor_Price_Calculator {
             $vendor_id
         );
         
-        $product_ids = self::get_product_ids_with_raw_price($cat_id, $vendor_id);
+        $product_ids = self::get_product_ids_with_seller_price($cat_id, $vendor_id);
         
         if (empty($product_ids)) {
-            Vendor_Logger::log_warning("No products with raw price found for calculation", null, $vendor_id);
-            throw new Exception('هیچ محصولی با قیمت خام برای محاسبه یافت نشد.');
+            Vendor_Logger::log_warning("No products with seller price found for calculation", null, $vendor_id);
+            throw new Exception('هیچ محصولی با قیمت فروشنده برای محاسبه یافت نشد.');
         }
         
-        Vendor_Logger::log_info("Found " . count($product_ids) . " products with raw price", $vendor_id);
+        Vendor_Logger::log_info("Found " . count($product_ids) . " products with seller price", $vendor_id);
         
         $updated_count = 0;
         $error_count = 0;
@@ -29,33 +29,39 @@ class Vendor_Price_Calculator {
             $processed_count++;
             
             try {
-                $raw_price = get_post_meta($product_id, '_vendor_raw_price', true);
-                if (!$raw_price) {
-                    Vendor_Logger::log_warning("Raw price not found for product", $product_id, $vendor_id);
+                // ✅ تغییر: استفاده از _seller_list_price به جای _vendor_raw_price
+                $seller_price = get_post_meta($product_id, '_seller_list_price', true);
+                if (!$seller_price || $seller_price <= 0) {
+                    Vendor_Logger::log_warning("Seller price not found or invalid for product", $product_id, $vendor_id);
                     continue;
                 }
                 
                 // محاسبه قیمت نهایی
-                $final_price = self::calculate_single_price($raw_price, $conversion_percent);
+                $final_price = self::calculate_single_price($seller_price, $conversion_percent);
                 
                 // ذخیره در محصول
                 $product = wc_get_product($product_id);
                 if ($product) {
                     $old_price = $product->get_regular_price();
                     $product->set_regular_price($final_price);
+                    
+                    // ✅ محاسبه و ذخیره سود فروش
+                    $sale_profit = $final_price - $seller_price;
+                    $product->update_meta_data('_sale_profit', $sale_profit);
+                    
                     $saved = $product->save();
                     
                     if ($saved) {
                         $updated_count++;
                         
-                        // ذخیره قیمت نهایی در متا برای بررسی
-                        update_post_meta($product_id, '_vendor_final_price', $final_price);
+                        // ✅ ذخیره زمان بروزرسانی
+                        update_post_meta($product_id, '_colleague_price_update_time', current_time('mysql'));
                         
                         Vendor_Logger::log_success(
                             $product_id,
                             'price_calculated',
                             $vendor_id,
-                            "Price calculated: {$raw_price} → {$final_price} (Old: {$old_price})"
+                            "Price calculated: {$seller_price} → {$final_price} (Profit: {$sale_profit})"
                         );
                     } else {
                         $error_count++;
@@ -75,7 +81,7 @@ class Vendor_Price_Calculator {
                 );
             }
             
-            // گزارش پیشرفت
+            // گزارش پیشرفت و بهینه‌سازی حافظه
             if (($index + 1) % 50 === 0) {
                 Vendor_Logger::log_info(
                     "Calculation progress: " . ($index + 1) . "/" . count($product_ids) . 
@@ -101,41 +107,49 @@ class Vendor_Price_Calculator {
     /**
      * محاسبه قیمت تک محصول
      */
-    public static function calculate_single_price($raw_price, $conversion_percent) {
-        $final_price = $raw_price * (1 + ($conversion_percent / 100));
+    public static function calculate_single_price($seller_price, $conversion_percent) {
+        // محاسبه قیمت با درنظرگیری درصد تبدیل
+        $final_price = $seller_price * (1 + ($conversion_percent / 100));
+        
+        // گرد کردن به مضرب 1000 تومان
         $final_price = ceil($final_price / 1000) * 1000;
+        
         return $final_price;
     }
     
-    private static function get_product_ids_with_raw_price($cat_id, $vendor_id) {
+    /**
+     * ✅ تغییر: جستجوی محصولات بر اساس _seller_list_price
+     */
+    private static function get_product_ids_with_seller_price($cat_id, $vendor_id) {
         global $wpdb;
         
-        Vendor_Logger::log_debug("Querying products with raw price for category: {$cat_id}", null, $vendor_id);
+        Vendor_Logger::log_debug("Querying products with seller price for category: {$cat_id}", null, $vendor_id);
         
         $sql = "SELECT p.ID FROM {$wpdb->posts} p
                 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
                 WHERE p.post_type = 'product' 
                 AND p.post_status = 'publish'
-                AND pm.meta_key = '_vendor_raw_price'
-                AND pm.meta_value > '0'";
+                AND pm.meta_key = '_seller_list_price'
+                AND CAST(pm.meta_value AS DECIMAL(10,2)) > 0";
         
         // فیلتر بر اساس دسته
         if ($cat_id !== 'all') {
             $sql .= " AND p.ID IN (
                 SELECT object_id FROM {$wpdb->term_relationships} 
-                WHERE term_taxonomy_id = {$cat_id}
+                WHERE term_taxonomy_id = %d
             )";
+            $sql = $wpdb->prepare($sql, intval($cat_id));
+        } else {
+            $sql = $wpdb->prepare($sql);
         }
         
-        // فیلتر بر اساس فروشنده
-        $vendor_user = get_userdata($vendor_id);
-        if ($vendor_user) {
-            $sql .= " AND p.post_author = {$vendor_id}";
-        }
+        // ✅ فیلتر بر اساس post_author (فروشنده)
+        $sql .= " AND p.post_author = %d";
+        $sql = $wpdb->prepare($sql, $vendor_id);
         
         $product_ids = $wpdb->get_col($sql);
         
-        Vendor_Logger::log_debug("Found " . count($product_ids) . " products with raw price", null, $vendor_id);
+        Vendor_Logger::log_debug("Found " . count($product_ids) . " products with seller price", null, $vendor_id);
         
         return $product_ids;
     }
@@ -154,26 +168,30 @@ class Vendor_Price_Calculator {
         
         foreach ($product_ids as $product_id) {
             try {
-                $raw_price = get_post_meta($product_id, '_vendor_raw_price', true);
-                if (!$raw_price) {
-                    Vendor_Logger::log_warning("Raw price not found for batch product", $product_id, $vendor_id);
+                // ✅ تغییر: استفاده از _seller_list_price
+                $seller_price = get_post_meta($product_id, '_seller_list_price', true);
+                if (!$seller_price || $seller_price <= 0) {
+                    Vendor_Logger::log_warning("Seller price not found for batch product", $product_id, $vendor_id);
                     continue;
                 }
                 
-                $final_price = self::calculate_single_price($raw_price, $conversion_percent);
+                $final_price = self::calculate_single_price($seller_price, $conversion_percent);
+                $sale_profit = $final_price - $seller_price;
                 
                 $product = wc_get_product($product_id);
                 if ($product) {
                     $old_price = $product->get_regular_price();
                     $product->set_regular_price($final_price);
+                    $product->update_meta_data('_sale_profit', $sale_profit);
+                    
                     $saved = $product->save();
                     
                     if ($saved) {
                         $updated_count++;
-                        update_post_meta($product_id, '_vendor_final_price', $final_price);
+                        update_post_meta($product_id, '_colleague_price_update_time', current_time('mysql'));
                         
                         Vendor_Logger::log_debug(
-                            "Batch price calculated: {$raw_price} → {$final_price}",
+                            "Batch price calculated: {$seller_price} → {$final_price} (Profit: {$sale_profit})",
                             $product_id,
                             $vendor_id
                         );
@@ -218,7 +236,7 @@ class Vendor_Price_Calculator {
      * بررسی وضعیت محاسبه قیمت
      */
     public static function get_calculation_status($vendor_id, $cat_id) {
-        $product_ids = self::get_product_ids_with_raw_price($cat_id, $vendor_id);
+        $product_ids = self::get_product_ids_with_seller_price($cat_id, $vendor_id);
         $conversion_percent = floatval(get_user_meta($vendor_id, 'vendor_price_conversion_percent', true));
         
         $status = [
@@ -231,15 +249,16 @@ class Vendor_Price_Calculator {
         $sample_count = min(5, count($product_ids));
         for ($i = 0; $i < $sample_count; $i++) {
             $product_id = $product_ids[$i];
-            $raw_price = get_post_meta($product_id, '_vendor_raw_price', true);
-            if ($raw_price) {
-                $final_price = self::calculate_single_price($raw_price, $conversion_percent);
+            // ✅ تغییر: استفاده از _seller_list_price
+            $seller_price = get_post_meta($product_id, '_seller_list_price', true);
+            if ($seller_price && $seller_price > 0) {
+                $final_price = self::calculate_single_price($seller_price, $conversion_percent);
                 $status['sample_calculation'][] = [
                     'product_id' => $product_id,
                     'product_name' => get_the_title($product_id),
-                    'raw_price' => $raw_price,
+                    'seller_price' => $seller_price,
                     'final_price' => $final_price,
-                    'profit' => $final_price - $raw_price
+                    'profit' => $final_price - $seller_price
                 ];
             }
         }
@@ -250,5 +269,31 @@ class Vendor_Price_Calculator {
         );
         
         return $status;
+    }
+    
+    /**
+     * ✅ جدید: محاسبه سریع قیمت برای یک محصول
+     */
+    public static function calculate_single_product_price($product_id, $vendor_id = null) {
+        $seller_price = get_post_meta($product_id, '_seller_list_price', true);
+        
+        if (!$seller_price || $seller_price <= 0) {
+            return false;
+        }
+        
+        // دریافت درصد تبدیل از مالک محصول
+        $product = get_post($product_id);
+        $vendor_id = $product->post_author;
+        $conversion_percent = floatval(get_user_meta($vendor_id, 'vendor_price_conversion_percent', true));
+        
+        $final_price = self::calculate_single_price($seller_price, $conversion_percent);
+        $sale_profit = $final_price - $seller_price;
+        
+        return [
+            'seller_price' => $seller_price,
+            'final_price' => $final_price,
+            'profit' => $sale_profit,
+            'conversion_percent' => $conversion_percent
+        ];
     }
 }

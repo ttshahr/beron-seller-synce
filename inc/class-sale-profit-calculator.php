@@ -8,7 +8,7 @@ class Sale_Profit_Calculator {
         add_action('wp_ajax_calculate_sale_profit', [$this, 'calculate_profit_ajax']);
         
         // ثبت لاگ هنگام راه‌اندازی
-        Vendor_Logger::log_info('Sale Profit Calculator initialized');
+        //Vendor_Logger::log_info('Sale Profit Calculator initialized');
     }
 
     public function add_menu() {
