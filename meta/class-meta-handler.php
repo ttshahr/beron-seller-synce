@@ -3,40 +3,36 @@ if (!defined('ABSPATH')) exit;
 
 class Vendor_Meta_Handler {
     
-    /**
-     * دریافت متاهای فروشنده + اعتبارسنجی
-     */
     public static function get_vendor_meta($vendor_id) {
-        $meta = [];
-        
-        foreach (Meta_Definitions::USER_META as $key => $definition) {
-            $meta[$key] = get_user_meta($vendor_id, $key, true);
-        }
-        
-        return $meta;
+        return [
+            'url' => get_user_meta($vendor_id, 'vendor_website_url', true),
+            'key' => get_user_meta($vendor_id, 'vendor_consumer_key', true),
+            'secret' => get_user_meta($vendor_id, 'vendor_consumer_secret', true),
+            'currency' => get_user_meta($vendor_id, 'vendor_currency', true),
+            'stock_type' => get_user_meta($vendor_id, 'vendor_stock_type', true),
+            'price_meta_key' => get_user_meta($vendor_id, 'vendor_cooperation_price_meta_key', true),
+            'conversion_percent' => get_user_meta($vendor_id, 'vendor_price_conversion_percent', true),
+        ];
     }
     
-    /**
-     * اعتبارسنجی متاهای ضروری
-     */
     public static function validate_vendor_meta($meta) {
         $errors = [];
         
-        $required = ['vendor_website_url', 'vendor_consumer_key', 'vendor_consumer_secret'];
+        if (empty($meta['url'])) {
+            $errors[] = 'آدرس وبسایت فروشنده تنظیم نشده است.';
+        }
         
-        foreach ($required as $key) {
-            if (empty($meta[$key])) {
-                $label = Meta_Definitions::USER_META[$key]['label'];
-                $errors[] = "{$label} تنظیم نشده است.";
-            }
+        if (empty($meta['key'])) {
+            $errors[] = 'کلید API فروشنده تنظیم نشده است.';
+        }
+        
+        if (empty($meta['secret'])) {
+            $errors[] = 'رمز API فروشنده تنظیم نشده است.';
         }
         
         return $errors;
     }
     
-    /**
-     * دریافت نام نمایشی فروشنده
-     */
     public static function get_vendor_display_name($vendor_id) {
         $vendor = get_userdata($vendor_id);
         return $vendor ? $vendor->display_name : 'فروشنده ناشناس';

@@ -22,7 +22,7 @@ class Vendor_Logger {
      * مقداردهی اولیه سیستم لاگ‌گیری
      */
     public static function init() {
-        self::$log_dir = Beron_Seller_Sync_PATH . 'logs/';
+        self::$log_dir = BERON_SELLER_SYNC_PATH . 'logs/';
         
         // ایجاد پوشه logs اگر وجود ندارد
         if (!file_exists(self::$log_dir)) {
