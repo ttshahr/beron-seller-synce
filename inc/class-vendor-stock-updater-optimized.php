@@ -3,230 +3,144 @@ if (!defined('ABSPATH')) exit;
 
 class Vendor_Stock_Updater_Optimized {
     
+    private static $batch_size = 30;
+    private static $api_delay = 100000;
+    
     public static function update_stocks($vendor_id, $cat_id) {
+        $start_time = microtime(true);
         $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
         
-        set_time_limit(1000);
-        ini_set('memory_limit', '2048M');
+        set_time_limit(600);
+        ini_set('memory_limit', '512M');
         wp_suspend_cache_addition(true);
+        wp_defer_term_counting(true);
         
-        Vendor_Logger::log_info("Starting stock update process for vendor {$vendor_id}", $vendor_id);
+        Vendor_Logger::log_info("🚀 Starting ULTRA-OPTIMIZED stock update for vendor {$vendor_id}", $vendor_id);
         
-        // دریافت محصولات محلی
-        if ($cat_id === 'all') {
-            $product_ids = self::get_vendor_products_by_owner($vendor_id);
-        } else {
-            $product_ids = self::get_vendor_products($vendor_id, $cat_id);
-        }
-        
-        if (empty($product_ids)) {
-            Vendor_Logger::log_warning("No local products found for vendor", null, $vendor_id);
-            throw new Exception('هیچ محصولی برای این فروشنده یافت نشد.');
-        }
-        
-        Vendor_Logger::log_info("Found " . count($product_ids) . " local products to process", $vendor_id);
-        
-        // دریافت فقط محصولات مورد نیاز از API
-        $vendor_products_map = self::get_vendor_products_map($meta, $vendor_id, $product_ids);
-        
-        if (empty($vendor_products_map)) {
-            Vendor_Logger::log_error("No matching products found in vendor API", null, $vendor_id);
-            throw new Exception('هیچ محصول مطابقی در فروشنده یافت نشد.');
-        }
-        
-        Vendor_Logger::log_info("Vendor products map created with " . count($vendor_products_map) . " matched products", $vendor_id);
-        
-        $updated_count = 0;
-        $processed_count = 0;
-        
-        foreach ($product_ids as $index => $product_id) {
-            $processed_count++;
-            $sku = get_post_meta($product_id, '_sku', true);
+        try {
+            // دریافت محصولات محلی
+            $local_products = self::get_local_products_optimized($vendor_id, $cat_id);
             
-            if (!$sku) {
-                Vendor_Logger::log_debug("Product {$product_id} has no SKU", $product_id, $vendor_id);
+            if (empty($local_products)) {
+                throw new Exception('هیچ محصولی برای این فروشنده یافت نشد.');
+            }
+            
+            Vendor_Logger::log_info("📦 Found " . count($local_products) . " local products", $vendor_id);
+            
+            // پردازش با Bulk API مانند price updater
+            $result = self::process_with_bulk_api($meta, $vendor_id, $local_products);
+            
+            $total_time = round(microtime(true) - $start_time, 2);
+            Vendor_Logger::log_success(
+                0, 
+                'stock_update_completed', 
+                $vendor_id, 
+                "✅ Stock update completed: {$result['updated_count']} updated from {$result['processed_count']} processed in {$total_time}s"
+            );
+            
+            return $result['updated_count'];
+            
+        } finally {
+            wp_defer_term_counting(false);
+            self::cleanup_memory();
+        }
+    }
+    
+    /**
+     * پردازش با Bulk API - شبیه price updater
+     */
+    private static function process_with_bulk_api($meta, $vendor_id, $local_products) {
+        $total_updated = 0;
+        $total_processed = 0;
+        $total_batches = ceil(count($local_products) / self::$batch_size);
+        
+        Vendor_Logger::log_info("🔄 Processing in {$total_batches} batches with BULK API", $vendor_id);
+        
+        foreach (array_chunk($local_products, self::$batch_size) as $batch_index => $batch) {
+            $batch_number = $batch_index + 1;
+            
+            // استخراج SKUهای این batch
+            $batch_skus = [];
+            $product_sku_map = [];
+            
+            foreach ($batch as $product) {
+                if (!empty($product['sku'])) {
+                    $clean_sku = trim($product['sku']);
+                    $batch_skus[] = $clean_sku;
+                    $product_sku_map[$clean_sku] = $product['ID'];
+                }
+            }
+            
+            if (empty($batch_skus)) {
                 continue;
             }
             
-            // فقط اگر محصول در فروشنده وجود دارد، بروزرسانی کن
-            if (isset($vendor_products_map[$sku])) {
-                $vendor_product = $vendor_products_map[$sku];
-                if (self::update_product_stock($product_id, $vendor_product, $meta, $vendor_id)) {
-                    $updated_count++;
-                }
-            } else {
-                Vendor_Logger::log_warning("SKU not found in vendor products: {$sku}", $product_id, $vendor_id);
-            }
+            // دریافت محصولات فروشنده با Bulk API
+            $vendor_products = self::fetch_vendor_products_bulk($meta, $vendor_id, $batch_skus, $batch_number);
             
-            // گزارش پیشرفت
-            if ($processed_count % 50 === 0) {
-                Vendor_Logger::log_info(
-                    "Progress: {$processed_count}/" . count($product_ids) . " processed, {$updated_count} updated", 
-                    $vendor_id
-                );
-                wp_cache_flush();
-                gc_collect_cycles();
-            }
-        }
-        
-        Vendor_Logger::log_success(
-            0, 
-            'stock_update_completed', 
-            $vendor_id, 
-            "Stock update completed: {$updated_count} products updated from {$processed_count} processed"
-        );
-        
-        return $updated_count;
-    }
-    
-    /**
-     * دریافت محصولات بر اساس مالک (author)
-     */
-    private static function get_vendor_products_by_owner($vendor_id) {
-        global $wpdb;
-        
-        $vendor = get_userdata($vendor_id);
-        if (!$vendor) {
-            Vendor_Logger::log_error("Vendor user not found: {$vendor_id}", null, $vendor_id);
-            return [];
-        }
-        
-        $sql = "SELECT ID FROM {$wpdb->posts} 
-                WHERE post_type = 'product' 
-                AND post_status = 'publish' 
-                AND post_author = %d";
-        
-        $products = $wpdb->get_col($wpdb->prepare($sql, $vendor_id));
-        Vendor_Logger::log_debug("Found " . count($products) . " products by owner", null, $vendor_id);
-        
-        return $products;
-    }
-    
-    /**
-     * دریافت محصولات بر اساس دسته و فروشنده
-     */
-    private static function get_vendor_products($vendor_id, $cat_id) {
-        global $wpdb;
-        
-        $sql = "SELECT p.ID FROM {$wpdb->posts} p 
-                WHERE p.post_type = 'product' 
-                AND p.post_status = 'publish' 
-                AND p.post_author = %d";
-        
-        if ($cat_id !== 'all') {
-            $sql .= " AND p.ID IN (
-                SELECT object_id FROM {$wpdb->term_relationships} 
-                WHERE term_taxonomy_id = %d
-            )";
-            $products = $wpdb->get_col($wpdb->prepare($sql, $vendor_id, $cat_id));
-        } else {
-            $products = $wpdb->get_col($wpdb->prepare($sql, $vendor_id));
-        }
-        
-        Vendor_Logger::log_debug("Found " . count($products) . " products by category", null, $vendor_id);
-        
-        return $products;
-    }
-    
-    /**
-     * دریافت map محصولات فروشنده (بهینه‌شده - فقط محصولات مورد نیاز)
-     */
-    private static function get_vendor_products_map($meta, $vendor_id, $product_ids) {
-        if (empty($product_ids)) {
-            return [];
-        }
-        
-        Vendor_Logger::log_info("Fetching vendor products for " . count($product_ids) . " local products", $vendor_id);
-        
-        // استخراج SKUهای محلی
-        $local_skus = self::get_local_skus($product_ids);
-        
-        if (empty($local_skus)) {
-            Vendor_Logger::log_warning("No local SKUs found", null, $vendor_id);
-            return [];
-        }
-        
-        Vendor_Logger::log_info("Found " . count($local_skus) . " local SKUs to check", $vendor_id);
-        
-        // دریافت فقط محصولات مورد نیاز از API
-        $vendor_products = self::get_specific_vendor_products($meta, $vendor_id, $local_skus);
-        
-        $products_map = [];
-        
-        foreach ($vendor_products as $product) {
-            if (!empty($product['sku'])) {
-                $clean_sku = trim($product['sku']);
-                $products_map[$clean_sku] = $product;
-            }
-        }
-        
-        Vendor_Logger::log_info("Vendor products map created with " . count($products_map) . " matched products", $vendor_id);
-        
-        return $products_map;
-    }
-    
-    /**
-     * دریافت SKUهای محصولات محلی
-     */
-    private static function get_local_skus($product_ids) {
-        global $wpdb;
-        
-        if (empty($product_ids)) {
-            return [];
-        }
-        
-        $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
-        $sql = "SELECT meta_value FROM {$wpdb->postmeta} 
-                WHERE post_id IN ($placeholders) 
-                AND meta_key = '_sku' 
-                AND meta_value != ''";
-        
-        $skus = $wpdb->get_col($wpdb->prepare($sql, $product_ids));
-        
-        // حذف مقادیر تکراری و خالی
-        $skus = array_filter(array_unique($skus));
-        
-        return $skus;
-    }
-    
-    /**
-     * دریافت محصولات خاص از API بر اساس SKU
-     */
-    private static function get_specific_vendor_products($meta, $vendor_id, $skus) {
-        if (empty($skus)) {
-            return [];
-        }
-        
-        $vendor_products = [];
-        $batch_size = 50; // پردازش دسته‌ای برای جلوگیری از overload
-        
-        Vendor_Logger::log_info("Fetching " . count($skus) . " specific products from vendor API", $vendor_id);
-        
-        foreach (array_chunk($skus, $batch_size) as $batch_index => $sku_batch) {
-            Vendor_Logger::log_info("Processing SKU batch " . ($batch_index + 1), $vendor_id);
+            // پردازش و بروزرسانی سریع
+            $batch_updated = self::process_batch_updates_fast($vendor_products, $product_sku_map, $meta, $vendor_id);
+            $total_updated += $batch_updated;
+            $total_processed += count($batch);
             
-            $batch_products = self::get_vendor_products_by_skus($meta, $vendor_id, $sku_batch);
-            $vendor_products = array_merge($vendor_products, $batch_products);
+            Vendor_Logger::log_info("✅ Batch {$batch_number}: {$batch_updated}/" . count($batch) . " updated", $vendor_id);
             
-            // تاخیر بین batch ها
-            if (count($skus) > $batch_size) {
-                sleep(1);
+            // پاکسازی حافظه
+            self::cleanup_memory();
+            
+            if ($batch_number < $total_batches) {
+                usleep(self::$api_delay);
             }
         }
         
-        return $vendor_products;
+        return [
+            'updated_count' => $total_updated,
+            'processed_count' => $total_processed
+        ];
     }
     
     /**
-     * دریافت محصولات فروشنده بر اساس SKUهای خاص
+     * دریافت محصولات با Bulk API - مانند price updater
      */
-    private static function get_vendor_products_by_skus($meta, $vendor_id, $skus) {
+    private static function fetch_vendor_products_bulk($meta, $vendor_id, $skus, $batch_number) {
         $api_url = trailingslashit($meta['url']) . 'wp-json/wc/v3/products';
         $auth = base64_encode($meta['key'] . ':' . $meta['secret']);
         
+        Vendor_Logger::log_info("🌐 Batch {$batch_number}: Fetching " . count($skus) . " SKUs with BULK API", $vendor_id);
+        
+        // روش اصلی: درخواست گروهی
+        $sku_string = implode(',', array_map('urlencode', $skus));
+        $request_url = add_query_arg([
+            'sku' => $sku_string,
+            'per_page' => count($skus)
+        ], $api_url);
+        
+        $response = wp_remote_get($request_url, [
+            'headers' => [
+                'Authorization' => 'Basic ' . $auth,
+                'User-Agent' => 'BeronSellerSync/3.1.0'
+            ],
+            'timeout' => 30,
+        ]);
+        
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+            if (is_array($data) && !empty($data)) {
+                Vendor_Logger::log_info("📊 Batch {$batch_number}: " . count($data) . " products found via BULK API", $vendor_id);
+                return $data;
+            }
+        }
+        
+        // Fallback: درخواست‌های تکی
+        Vendor_Logger::log_warning("BULK API failed, using fallback method", null, $vendor_id);
+        return self::fetch_vendor_products_fallback($meta, $vendor_id, $skus, $api_url, $auth);
+    }
+    
+    /**
+     * Fallback: درخواست‌های تکی
+     */
+    private static function fetch_vendor_products_fallback($meta, $vendor_id, $skus, $api_url, $auth) {
         $products = [];
-        $found_count = 0;
-        $not_found_count = 0;
         
         foreach ($skus as $sku) {
             $clean_sku = trim($sku);
@@ -234,7 +148,7 @@ class Vendor_Stock_Updater_Optimized {
             $response = wp_remote_get(add_query_arg('sku', $clean_sku, $api_url), [
                 'headers' => [
                     'Authorization' => 'Basic ' . $auth,
-                    'User-Agent' => 'VendorSync/1.0'
+                    'User-Agent' => 'BeronSellerSync/3.1.0'
                 ],
                 'timeout' => 15,
             ]);
@@ -243,136 +157,168 @@ class Vendor_Stock_Updater_Optimized {
                 $data = json_decode(wp_remote_retrieve_body($response), true);
                 if (!empty($data) && isset($data[0])) {
                     $products[] = $data[0];
-                    $found_count++;
-                    Vendor_Logger::log_debug("Found vendor product for SKU: {$clean_sku}", null, $vendor_id);
-                } else {
-                    $not_found_count++;
-                    Vendor_Logger::log_warning("Vendor product not found for SKU: {$clean_sku}", null, $vendor_id);
                 }
-            } else {
-                $not_found_count++;
-                $error_msg = is_wp_error($response) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
-                Vendor_Logger::log_error("API error for SKU {$clean_sku}: {$error_msg}", null, $vendor_id);
             }
             
-            // تاخیر کوچک بین درخواست‌ها
-            usleep(200000); // 0.2 ثانیه
+            usleep(50000); // تاخیر کم
         }
-        
-        Vendor_Logger::log_info("SKU batch result: {$found_count} found, {$not_found_count} not found", $vendor_id);
         
         return $products;
     }
     
     /**
-     * بروزرسانی موجودی یک محصول
+     * پردازش سریع batch - بدون آبجکت‌های غیرضروری
      */
-    private static function update_product_stock($product_id, $vendor_product, $meta, $vendor_id) {
-        $product = wc_get_product($product_id);
-        if (!$product) {
-            Vendor_Logger::log_error("Product not found", $product_id, $vendor_id);
-            return false;
-        }
+    private static function process_batch_updates_fast($vendor_products, $product_sku_map, $meta, $vendor_id) {
+        $updated_count = 0;
+        $batch_updates = [];
         
-        try {
-            $old_stock = $product->get_stock_quantity();
-            $old_status = $product->get_stock_status();
-            $sku = get_post_meta($product_id, '_sku', true);
-            
-            Vendor_Logger::log_debug("Updating stock for product: {$sku}", $product_id, $vendor_id);
-            
-            if ($meta['stock_type'] === 'managed') {
-                $new_stock = intval($vendor_product['stock_quantity'] ?? 0);
-                $product->set_manage_stock(true);
-                $product->set_stock_quantity($new_stock);
+        foreach ($vendor_products as $vendor_product) {
+            if (!empty($vendor_product['sku'])) {
+                $clean_sku = trim($vendor_product['sku']);
                 
-                // تنظیم وضعیت موجودی بر اساس quantity
-                $new_status = ($new_stock > 0) ? 'instock' : 'outofstock';
-                $product->set_stock_status($new_status);
-                
-                $stock_changed = ($old_stock != $new_stock);
-                $change_info = "Stock: {$old_stock} → {$new_stock}, Status: {$old_status} → {$new_status}";
-                
-            } else {
-                $new_status = (($vendor_product['stock_status'] ?? '') === 'instock') ? 'instock' : 'outofstock';
-                $product->set_stock_status($new_status);
-                $stock_changed = ($old_status != $new_status);
-                $change_info = "Status: {$old_status} → {$new_status}";
+                if (isset($product_sku_map[$clean_sku])) {
+                    $product_id = $product_sku_map[$clean_sku];
+                    
+                    // آماده‌سازی داده‌های بروزرسانی
+                    $update_data = self::prepare_stock_update_data($product_id, $vendor_product, $meta);
+                    
+                    if ($update_data['should_update']) {
+                        $batch_updates[] = $update_data;
+                    }
+                }
             }
             
-            // فقط در صورت تغییر، ذخیره کن
-            if ($stock_changed) {
-                $product->save();
+            // اجرای batch هر 20 آیتم
+            if (count($batch_updates) >= 20) {
+                $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
+                $batch_updates = [];
+            }
+        }
+        
+        // اجرای باقی‌مانده
+        if (!empty($batch_updates)) {
+            $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
+        }
+        
+        return $updated_count;
+    }
+    
+    /**
+     * آماده‌سازی داده‌های بروزرسانی - سبک
+     */
+    private static function prepare_stock_update_data($product_id, $vendor_product, $meta) {
+        // دریافت مقادیر فعلی مستقیماً از دیتابیس
+        $current_stock = get_post_meta($product_id, '_stock', true);
+        $current_status = get_post_meta($product_id, '_stock_status', true);
+        
+        $new_stock = 0;
+        $new_status = 'outofstock';
+        $should_update = false;
+        
+        if ($meta['stock_type'] === 'managed') {
+            $new_stock = intval($vendor_product['stock_quantity'] ?? 0);
+            $new_status = ($new_stock > 0) ? 'instock' : 'outofstock';
+            
+            if ($current_stock != $new_stock || $current_status != $new_status) {
+                $should_update = true;
+            }
+        } else {
+            $new_status = (($vendor_product['stock_status'] ?? '') === 'instock') ? 'instock' : 'outofstock';
+            if ($current_status != $new_status) {
+                $should_update = true;
+            }
+        }
+        
+        return [
+            'product_id' => $product_id,
+            'should_update' => $should_update,
+            'meta_updates' => [
+                '_stock' => $new_stock,
+                '_stock_status' => $new_status,
+                '_manage_stock' => ($meta['stock_type'] === 'managed') ? 'yes' : 'no'
+            ],
+            'log_message' => "Stock: {$current_stock} → {$new_stock}, Status: {$current_status} → {$new_status}"
+        ];
+    }
+    
+    /**
+     * اجرای بروزرسانی‌های سریع - مستقیماً با متا
+     */
+    private static function execute_fast_batch_updates($batch_updates, $vendor_id) {
+        global $wpdb;
+        
+        $updated_count = 0;
+        
+        foreach ($batch_updates as $update) {
+            if (!$update['should_update']) continue;
+            
+            $product_id = $update['product_id'];
+            
+            try {
+                // بروزرسانی مستقیم متاها - بسیار سریع‌تر از WC_Product
+                foreach ($update['meta_updates'] as $meta_key => $meta_value) {
+                    update_post_meta($product_id, $meta_key, $meta_value);
+                }
+                
+                // بروزرسانی زمان سینک
+                update_post_meta($product_id, '_vendor_stock_last_sync', current_time('mysql'));
+                
+                $updated_count++;
                 Vendor_Logger::log_success(
                     $product_id, 
                     'stock_updated', 
                     $vendor_id, 
-                    "Stock updated - {$change_info}"
+                    $update['log_message']
                 );
-                return true;
-            } else {
-                Vendor_Logger::log_debug(
-                    "Stock unchanged for product: {$sku} - {$change_info}", 
+                
+            } catch (Exception $e) {
+                Vendor_Logger::log_error(
+                    "Fast stock update failed: " . $e->getMessage(), 
                     $product_id, 
                     $vendor_id
                 );
-                return false;
             }
-            
-        } catch (Exception $e) {
-            Vendor_Logger::log_error(
-                "Stock update failed: " . $e->getMessage(), 
-                $product_id, 
-                $vendor_id
-            );
-            return false;
         }
+        
+        return $updated_count;
     }
     
     /**
-     * دریافت گزارش بروزرسانی
+     * دریافت محصولات محلی بهینه‌شده
      */
-    public static function get_stock_update_report($vendor_id, $cat_id) {
-        Vendor_Logger::log_info("Generating stock update report", $vendor_id);
+    private static function get_local_products_optimized($vendor_id, $cat_id) {
+        global $wpdb;
         
-        $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
+        $sql = "SELECT p.ID, pm.meta_value as sku 
+                FROM {$wpdb->posts} p 
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+                WHERE p.post_type = 'product' 
+                AND p.post_status = 'publish' 
+                AND p.post_author = %d 
+                AND pm.meta_key = '_sku' 
+                AND pm.meta_value != ''";
         
-        if ($cat_id === 'all') {
-            $product_ids = self::get_vendor_products_by_owner($vendor_id);
-        } else {
-            $product_ids = self::get_vendor_products($vendor_id, $cat_id);
+        $params = [$vendor_id];
+        
+        if ($cat_id !== 'all') {
+            $sql .= " AND p.ID IN (
+                SELECT object_id FROM {$wpdb->term_relationships} 
+                WHERE term_taxonomy_id = %d
+            )";
+            $params[] = intval($cat_id);
         }
         
-        $local_skus = self::get_local_skus($product_ids);
-        $vendor_products_map = self::get_vendor_products_map($meta, $vendor_id, $product_ids);
+        $sql .= " ORDER BY p.ID ASC";
         
-        $report = [
-            'total_local_products' => count($product_ids),
-            'total_local_skus' => count($local_skus),
-            'total_vendor_products' => count($vendor_products_map),
-            'matched_products' => 0,
-            'update_candidates' => []
-        ];
-        
-        foreach ($product_ids as $product_id) {
-            $sku = get_post_meta($product_id, '_sku', true);
-            if (!$sku) continue;
-            
-            if (isset($vendor_products_map[$sku])) {
-                $report['matched_products']++;
-                $report['update_candidates'][] = [
-                    'product_id' => $product_id,
-                    'sku' => $sku,
-                    'product_name' => get_the_title($product_id)
-                ];
-            }
-        }
-        
-        Vendor_Logger::log_info(
-            "Stock report generated: {$report['matched_products']} matches out of {$report['total_local_products']} local products", 
-            $vendor_id
-        );
-        
-        return $report;
+        return $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+    }
+    
+    /**
+     * پاکسازی حافظه
+     */
+    private static function cleanup_memory() {
+        wp_cache_flush();
+        gc_collect_cycles();
     }
 }

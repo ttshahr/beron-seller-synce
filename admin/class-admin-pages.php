@@ -273,16 +273,6 @@ public static function render_main_page() {
             </div>
         </div>
 
-        <div class="card" style="margin-bottom: 20px; background: #e8f5e8; border-left: 4px solid #28a745;">
-            <h3 style="color: #155724; margin-top: 0;">🔗 تست اتصال API</h3>
-            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
-                <input type="hidden" name="action" value="test_vendor_connection">
-                <input type="hidden" name="vendor_id" id="test_connection_vendor_id">
-                <?php submit_button('تست اتصال به فروشنده', 'secondary', 'submit', false); ?>
-                <p class="description">بررسی می‌کند آیا به API فروشنده می‌توان متصل شد یا نه.</p>
-            </form>
-        </div>
-
         <div class="card">
             <h2>📦 بروزرسانی موجودی از فروشنده</h2>
             <p>این عملیات موجودی محصولات را از فروشنده دریافت و بروزرسانی می‌کند.</p>

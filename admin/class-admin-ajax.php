@@ -34,7 +34,6 @@ class Admin_Ajax {
                     var vendorId = $(this).val();
                     $('#assign_vendor_id').val(vendorId);
                     $('#assign_smart_vendor_id').val(vendorId);
-                    $('#test_connection_vendor_id').val(vendorId);
                     
                     // رفرش صفحه برای نمایش وضعیت
                     if (vendorId) {
