@@ -191,12 +191,13 @@ public static function render_main_page() {
         $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
         $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
         ?>
+        
         <div class="card">
             <h2>🧮 محاسبه قیمت‌های نهایی</h2>
-            <p>این عملیات قیمت‌های نهایی را بر اساس درصد سود محاسبه و اعمال می‌کند.</p>
             
             <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
                 <input type="hidden" name="action" value="calculate_vendor_prices">
+                <?php wp_nonce_field('calculate_vendor_prices_nonce', '_wpnonce'); ?>
                 
                 <table class="form-table">
                     <tr>
@@ -215,6 +216,18 @@ public static function render_main_page() {
                             </select>
                         </td>
                     </tr>
+                    
+                    <!-- 🔥 فیلد جدید: درصد تبدیل -->
+                    <tr>
+                        <th><label for="calc_conversion_percent">درصد افزودن به قیمت</label></th>
+                        <td>
+                            <input type="number" name="conversion_percent" id="calc_conversion_percent" 
+                                   value="15" min="0" max="1000" step="0.1" style="width: 150px;" required>
+                            <span>%</span>
+                            <p class="description">مثلاً برای 15% افزایش قیمت، عدد 15 را وارد کنید</p>
+                        </td>
+                    </tr>
+                    
                     <tr>
                         <th><label for="calc_product_cat">دسته محصولات (اختیاری)</label></th>
                         <td>

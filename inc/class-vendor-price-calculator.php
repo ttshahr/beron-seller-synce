@@ -6,19 +6,20 @@ class Vendor_Price_Calculator {
     private static $batch_size = 100;
     private static $memory_cleanup_interval = 50;
     
-    public static function calculate_final_prices($vendor_id, $cat_id) {
-        $conversion_percent = floatval(get_user_meta($vendor_id, 'vendor_price_conversion_percent', true));
+    /**
+     * متد اصلی محاسبه قیمت‌های نهایی
+     */
+    public static function calculate_final_prices($vendor_id, $cat_id, $conversion_percent = 15) {
         $vendor_name = self::get_vendor_name($vendor_id);
         
         // تنظیمات بهینه برای حجم بالا
-        set_time_limit(600); // افزایش به 10 دقیقه
+        set_time_limit(600);
         ini_set('memory_limit', '512M');
         wp_suspend_cache_addition(true);
         wp_defer_term_counting(true);
-        wp_defer_comment_counting(true);
         
         Vendor_Logger::log_info(
-            "🚀 Starting OPTIMIZED price calculation for vendor: {$vendor_name} ({$vendor_id}) - Percent: {$conversion_percent}%",
+            "🚀 Starting price calculation for vendor: {$vendor_name} - Percent: {$conversion_percent}%",
             $vendor_id
         );
         
@@ -31,21 +32,21 @@ class Vendor_Price_Calculator {
             
             Vendor_Logger::log_info("📦 Found " . count($product_ids) . " products with seller price", $vendor_id);
             
-            // پردازش استریمینگ با batch
+            // پردازش دسته‌ای
             $result = self::process_calculation_batches($product_ids, $conversion_percent, $vendor_id);
             
             Vendor_Logger::log_success(
                 0,
                 'price_calculation_completed',
                 $vendor_id,
-                "✅ Price calculation completed: {$result['updated_count']} updated, {$result['error_count']} errors from {$result['processed_count']} processed"
+                "✅ Price calculation completed: {$result['updated_count']} updated, {$result['error_count']} errors"
             );
             
             return $result['updated_count'];
             
         } finally {
             wp_defer_term_counting(false);
-            wp_defer_comment_counting(false);
+            wp_suspend_cache_addition(false);
             self::cleanup_memory();
         }
     }
@@ -56,7 +57,6 @@ class Vendor_Price_Calculator {
     private static function process_calculation_batches($product_ids, $conversion_percent, $vendor_id) {
         $total_updated = 0;
         $total_errors = 0;
-        $total_processed = 0;
         $total_batches = ceil(count($product_ids) / self::$batch_size);
         
         Vendor_Logger::log_info("🔄 Processing in {$total_batches} batches", $vendor_id);
@@ -67,7 +67,6 @@ class Vendor_Price_Calculator {
             $batch_result = self::process_single_batch($batch, $conversion_percent, $vendor_id, $batch_number, $total_batches);
             $total_updated += $batch_result['updated_count'];
             $total_errors += $batch_result['error_count'];
-            $total_processed += $batch_result['processed_count'];
             
             // پاکسازی حافظه بعد از هر batch
             self::cleanup_memory();
@@ -75,8 +74,7 @@ class Vendor_Price_Calculator {
         
         return [
             'updated_count' => $total_updated,
-            'error_count' => $total_errors,
-            'processed_count' => $total_processed
+            'error_count' => $total_errors
         ];
     }
     
@@ -86,25 +84,21 @@ class Vendor_Price_Calculator {
     private static function process_single_batch($product_ids, $conversion_percent, $vendor_id, $batch_number, $total_batches) {
         $updated_count = 0;
         $error_count = 0;
-        $processed_count = 0;
         $batch_updates = [];
         
         Vendor_Logger::log_info("🔧 Batch {$batch_number}/{$total_batches}: Processing " . count($product_ids) . " products", $vendor_id);
         
         foreach ($product_ids as $index => $product_id) {
-            $processed_count++;
-            
             try {
                 $seller_price = get_post_meta($product_id, '_seller_list_price', true);
                 if (!$seller_price || $seller_price <= 0) {
                     continue;
                 }
                 
-                // محاسبه قیمت
+                // محاسبه قیمت با درصد دلخواه
                 $final_price = self::calculate_single_price($seller_price, $conversion_percent);
                 $sale_profit = $final_price - $seller_price;
                 
-                // استفاده از بروزرسانی مستقیم برای سرعت بیشتر
                 $batch_updates[] = [
                     'product_id' => $product_id,
                     'final_price' => $final_price,
@@ -117,11 +111,6 @@ class Vendor_Price_Calculator {
                     $batch_updated = self::execute_batch_updates($batch_updates, $vendor_id);
                     $updated_count += $batch_updated;
                     $batch_updates = [];
-                    
-                    // پاکسازی حافظه
-                    if ($processed_count % self::$memory_cleanup_interval === 0) {
-                        wp_cache_flush();
-                    }
                 }
                 
             } catch (Exception $e) {
@@ -140,17 +129,16 @@ class Vendor_Price_Calculator {
             $updated_count += $batch_updated;
         }
         
-        Vendor_Logger::log_info("✅ Batch {$batch_number}: {$updated_count}/{$processed_count} updated, {$error_count} errors", $vendor_id);
+        Vendor_Logger::log_info("✅ Batch {$batch_number}: {$updated_count} updated, {$error_count} errors", $vendor_id);
         
         return [
             'updated_count' => $updated_count,
-            'error_count' => $error_count,
-            'processed_count' => $processed_count
+            'error_count' => $error_count
         ];
     }
     
     /**
-     * اجرای بروزرسانی‌های دسته‌ای - بهینه‌شده
+     * اجرای بروزرسانی‌های دسته‌ای
      */
     private static function execute_batch_updates($batch_updates, $vendor_id) {
         $updated_count = 0;
@@ -162,7 +150,6 @@ class Vendor_Price_Calculator {
             $seller_price = $update['seller_price'];
             
             try {
-                // روش بهینه: بروزرسانی مستقیم قیمت
                 $result = self::update_product_price_direct($product_id, $final_price, $sale_profit);
                 
                 if ($result) {
@@ -175,13 +162,11 @@ class Vendor_Price_Calculator {
                         $vendor_id,
                         "Price calculated: {$seller_price} → {$final_price} (Profit: {$sale_profit})"
                     );
-                } else {
-                    Vendor_Logger::log_error("Failed to save product price directly", $product_id, $vendor_id);
                 }
                 
             } catch (Exception $e) {
                 Vendor_Logger::log_error(
-                    "Direct price update failed: " . $e->getMessage(),
+                    "Price update failed: " . $e->getMessage(),
                     $product_id,
                     $vendor_id
                 );
@@ -192,22 +177,12 @@ class Vendor_Price_Calculator {
     }
     
     /**
-     * بروزرسانی مستقیم قیمت محصول - سریع‌تر از WC_Product
+     * بروزرسانی مستقیم قیمت محصول
      */
     private static function update_product_price_direct($product_id, $final_price, $sale_profit) {
-        global $wpdb;
-        
-        // بروزرسانی مستقیم در دیتابیس - بسیار سریع‌تر
         $price_updated = update_post_meta($product_id, '_regular_price', $final_price);
         $price_updated = update_post_meta($product_id, '_price', $final_price) && $price_updated;
         $profit_updated = update_post_meta($product_id, '_sale_profit', $sale_profit);
-        
-        // برای محصولات متغیر، باید قیمت فرزندان هم بروز شود
-        $product = wc_get_product($product_id);
-        if ($product && $product->is_type('variable')) {
-            // اینجا می‌توانید منطق بروزرسانی محصولات متغیر را اضافه کنید
-            // فعلاً فقط محصولات ساده پشتیبانی می‌شوند
-        }
         
         return $price_updated && $profit_updated;
     }
@@ -256,10 +231,6 @@ class Vendor_Price_Calculator {
     private static function cleanup_memory() {
         wp_cache_flush();
         gc_collect_cycles();
-        
-        if (isset($GLOBALS['wpdb']->queries)) {
-            $GLOBALS['wpdb']->queries = [];
-        }
     }
     
     /**
@@ -269,7 +240,4 @@ class Vendor_Price_Calculator {
         $vendor = get_userdata($vendor_id);
         return $vendor ? $vendor->display_name : 'Unknown Vendor';
     }
-    
-    // متدهای دیگر مانند get_calculation_status, calculate_single_product_price etc.
-    // می‌توانند بدون تغییر باقی بمانند
 }
