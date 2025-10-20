@@ -144,7 +144,7 @@ beron-seller-synce/
 
 ## هوک‌ها و فیلترها
 
-```php
+
 // فیلتر برای تغییر درصد سود
 add_filter('vendor_price_conversion_percent', function($percent) {
     return 25; // تغییر درصد به 25%
@@ -156,3 +156,159 @@ add_action('vendor_sync_completed', function($vendor_id, $processed_count) {
 });
 
 
+## دستورالعمل استفاده از سیستم لاگ‌گیری 
+
+🎯 معرفی
+سیستم لاگ‌گیری پیشرفته برای ردیابی و ثبت تمامی رویدادهای همگام‌سازی با فروشندگان.
+
+📁 ساختار فایل‌های لاگ
+sync-errors.log - خطاها و مشکلات
+
+sync-success.log - عملیات موفق
+
+sync-api.log - درخواست‌های API
+
+sync-debug.log - اطلاعات دیباگ (فقط در حالت توسعه)
+
+sync-general.log - تمام لاگ‌ها (جامع)
+
+🚀 روش‌های استفاده
+1. ثبت خطا (Error)
+// خطای ساده
+Vendor_Logger::log_error("خطای اتصال به API", $product_id, $vendor_id);
+
+// خطا با جزئیات بیشتر
+Vendor_Logger::log_error("Timeout در دریافت قیمت برای SKU: {$sku}", null, $vendor_id);
+
+2. ثبت موفقیت (Success)
+
+// موفقیت با محصول
+Vendor_Logger::log_success($product_id, 'price_updated', $vendor_id, "قیمت به {$price} به‌روز شد");
+
+// موفقیت بدون محصول
+Vendor_Logger::log_success(0, 'sync_completed', $vendor_id, "همگام‌سازی ۱۵۰ محصول تکمیل شد");
+
+3. ثبت درخواست API
+
+Vendor_Logger::log_api_request(
+    $api_url,
+    $sku,
+    true, // موفق/ناموفق
+    $vendor_id,
+    $response_time // اختیاری
+);
+
+4. ثبت اطلاعات عمومی (Info)
+
+// شروع عملیات
+Vendor_Logger::log_info("🚀 شروع همگام‌سازی قیمت برای فروشنده {$vendor_id}", $vendor_id);
+
+// وضعیت پردازش
+Vendor_Logger::log_info("📦 پردازش ۵۰ محصول از ۲۰۰ محصول", $vendor_id);
+
+// اتمام عملیات
+Vendor_Logger::log_info("✅ همگام‌سازی با موفقیت تکمیل شد", $vendor_id);
+
+5. ثبت هشدار (Warning)
+
+// هشدار برای محصول
+Vendor_Logger::log_warning("قیمت صفر تشخیص داده شد", $product_id, $vendor_id);
+
+// هشدار عمومی
+Vendor_Logger::log_warning("محدودیت نرخ درخواست API", null, $vendor_id);
+
+6. ثبت دیباگ (Debug) - فقط در حالت توسعه
+
+// ابتدا در wp-config.php تعریف کنید:
+define('BERON_DEBUG', true);
+
+// سپس استفاده کنید:
+Vendor_Logger::log_debug("مقدار متا: {$meta_value}", $product_id, $vendor_id);
+Vendor_Logger::log_debug("پاسخ API: " . print_r($response, true), null, $vendor_id);
+
+💡 الگوهای توصیه شده
+برای عملیات همگام‌سازی قیمت:
+
+    public function sync_prices($vendor_id, $brand_id) {
+        try {
+            Vendor_Logger::log_info("🚀 شروع همگام‌سازی قیمت", $vendor_id);
+            
+            // منطق اصلی
+            foreach ($products as $product) {
+                Vendor_Logger::log_debug("پردازش محصول: {$product['sku']}", $product['id'], $vendor_id);
+                
+                if ($price > 0) {
+                    Vendor_Logger::log_success($product['id'], 'price_saved', $vendor_id, "قیمت: {$price}");
+                } else {
+                    Vendor_Logger::log_warning("قیمت نامعتبر", $product['id'], $vendor_id);
+                }
+            }
+            
+            Vendor_Logger::log_info("✅ همگام‌سازی تکمیل شد", $vendor_id);
+            
+        } catch (Exception $e) {
+            Vendor_Logger::log_error("خطا در همگام‌سازی: " . $e->getMessage(), null, $vendor_id);
+            throw $e;
+        }
+    }
+برای درخواست‌های API:
+
+
+    public function fetch_vendor_data($sku, $vendor_id) {
+        $start_time = microtime(true);
+        
+        try {
+            $response = $this->api_call($sku);
+            $response_time = round(microtime(true) - $start_time, 2);
+            
+            Vendor_Logger::log_api_request($this->api_url, $sku, true, $vendor_id, $response_time);
+            return $response;
+            
+        } catch (Exception $e) {
+            $response_time = round(microtime(true) - $start_time, 2);
+            Vendor_Logger::log_api_request($this->api_url, $sku, false, $vendor_id, $response_time);
+            Vendor_Logger::log_error("API Error: " . $e->getMessage(), null, $vendor_id);
+            throw $e;
+        }
+    }
+
+🛠️ ابزارهای مدیریت لاگ
+
+مشاهده لاگ‌های اخیر:
+
+$recent_logs = Vendor_Logger::get_recent_logs('general', 50); // ۵۰ خط آخر
+$error_logs = Vendor_Logger::get_recent_logs('error', 20);   // ۲۰ خط آخر خطاها
+
+دریافت آمار لاگ‌ها:
+
+$stats = Vendor_Logger::get_log_stats();
+
+خروجی:
+[
+    'error' => ['size' => '15 KB', 'lines' => 150, 'last_modified' => '2024-01-15 10:30:00'],
+    'success' => ['size' => '45 KB', 'lines' => 450, 'last_modified' => '2024-01-15 10:35:00'],
+    ...
+]
+
+
+پاکسازی خودکار:
+// پاکسازی لاگ‌های قدیمی‌تر از ۳۰ روز
+Vendor_Logger::cleanup_old_logs(30);
+
+📊 سطوح لاگ و موارد استفاده
+سطح	مورد استفاده	مثال
+error	خطاهای بحرانی	خطای اتصال به دیتابیس
+success	عملیات موفق	قیمت با موفقیت ذخیره شد
+warning	هشدارها	قیمت صفر تشخیص داده شد
+info	اطلاعات عمومی	شروع عملیات همگام‌سازی
+debug	اطلاعات توسعه	مقادیر متا و متغیرها
+api	درخواست‌های API	API Call - Success - 0.45s
+
+
+📋 نکات مهم
+همیشه vendor_id را ارسال کنید برای ردیابی بهتر
+از emoji استفاده کنید برای خوانایی بهتر لاگ‌ها
+لاگ‌های دیباگ را در production غیرفعال کنید
+لاگ‌ها را به طور منظم بررسی و پاکسازی کنید
+از پیام‌های توصیفی و واضح استفاده کنید
+این دستورالعمل به همه توسعه‌دهندگان کمک می‌کند تا به صورت استاندارد و یکپارچه از سیستم لاگ‌گیری استفاده کنند.
