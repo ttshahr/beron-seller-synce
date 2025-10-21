@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) exit;
 class Vendor_Logger {
     
     const LOG_LEVEL_ERROR = 'error';
-    const LOG_LEVEL_SUCCESS = 'success';
+    const LOG_LEVEL_SUCCESS = 'success'; 
     const LOG_LEVEL_INFO = 'info';
     const LOG_LEVEL_WARNING = 'warning';
     const LOG_LEVEL_DEBUG = 'debug';
@@ -13,6 +13,8 @@ class Vendor_Logger {
     private static $log_files = [
         'error' => 'sync-errors.log',
         'success' => 'sync-success.log', 
+        'info' => 'sync-general.log', // 🔥 اضافه کردن کلید info
+        'warning' => 'sync-warnings.log', // 🔥 اضافه کردن کلید warning
         'api' => 'sync-api.log',
         'debug' => 'sync-debug.log',
         'general' => 'sync-general.log'
@@ -26,7 +28,10 @@ class Vendor_Logger {
         
         // ایجاد پوشه logs اگر وجود ندارد
         if (!file_exists(self::$log_dir)) {
-            wp_mkdir_p(self::$log_dir);
+            if (!wp_mkdir_p(self::$log_dir)) {
+                error_log('❌ Failed to create log directory: ' . self::$log_dir);
+                return false;
+            }
             
             // ایجاد فایل .htaccess برای امنیت
             self::create_htaccess();
@@ -36,9 +41,13 @@ class Vendor_Logger {
         foreach (self::$log_files as $file) {
             $log_file = self::$log_dir . $file;
             if (!file_exists($log_file)) {
-                file_put_contents($log_file, "=== Beron Seller Sync Log - " . date('Y-m-d H:i:s') . " ===\n\n");
+                if (!self::safe_file_put_contents($log_file, "=== Beron Seller Sync Log - " . date('Y-m-d H:i:s') . " ===\n\n")) {
+                    error_log('❌ Failed to create log file: ' . $log_file);
+                }
             }
         }
+        
+        return true;
     }
     
     /**
@@ -46,7 +55,44 @@ class Vendor_Logger {
      */
     private static function create_htaccess() {
         $htaccess_content = "Order deny,allow\nDeny from all\n";
-        file_put_contents(self::$log_dir . '.htaccess', $htaccess_content);
+        return self::safe_file_put_contents(self::$log_dir . '.htaccess', $htaccess_content);
+    }
+    
+    /**
+     * متد ایمن برای نوشتن در فایل
+     */
+    private static function safe_file_put_contents($file_path, $content, $flags = 0) {
+        // بررسی اینکه مسیر فایل است نه پوشه
+        if (is_dir($file_path)) {
+            error_log('❌ Vendor_Logger: Path is a directory, not a file: ' . $file_path);
+            return false;
+        }
+        
+        // بررسی وجود پوشه والد
+        $dir = dirname($file_path);
+        if (!file_exists($dir)) {
+            if (!wp_mkdir_p($dir)) {
+                error_log('❌ Vendor_Logger: Cannot create directory: ' . $dir);
+                return false;
+            }
+        }
+        
+        // بررسی قابل نوشتن بودن پوشه
+        if (!is_writable($dir)) {
+            error_log('❌ Vendor_Logger: Directory not writable: ' . $dir);
+            return false;
+        }
+        
+        // نوشتن در فایل با مدیریت خطا
+        $result = @file_put_contents($file_path, $content, $flags | LOCK_EX);
+        
+        if ($result === false) {
+            $error = error_get_last();
+            error_log('❌ Vendor_Logger: Failed to write to file: ' . $file_path . ' - Error: ' . ($error['message'] ?? 'Unknown'));
+            return false;
+        }
+        
+        return true;
     }
     
     /**
@@ -102,12 +148,34 @@ class Vendor_Logger {
     }
     
     /**
-     * متد اصلی نوشتن در لاگ
+     * متد اصلی نوشتن در لاگ - با مدیریت خطای بهبود یافته
      */
     private static function write_log($level, $message, $product_id = null, $vendor_id = null) {
         // اطمینان از مقداردهی اولیه
         if (self::$log_dir === null) {
-            self::init();
+            if (!self::init()) {
+                // اگر مقداردهی اولیه شکست خورد، از نوشتن لاگ صرف نظر کن
+                return false;
+            }
+        }
+        
+        // 🔥 نگاشت سطح‌های لاگ به فایل‌ها
+        $log_level_map = [
+            self::LOG_LEVEL_ERROR => 'error',
+            self::LOG_LEVEL_SUCCESS => 'success',
+            self::LOG_LEVEL_INFO => 'info', 
+            self::LOG_LEVEL_WARNING => 'warning',
+            self::LOG_LEVEL_DEBUG => 'debug',
+            'api' => 'api'
+        ];
+        
+        // تبدیل سطح لاگ به کلید فایل
+        $file_key = isset($log_level_map[$level]) ? $log_level_map[$level] : $level;
+        
+        // بررسی وجود فایل لاگ مربوطه
+        if (!isset(self::$log_files[$file_key])) {
+            error_log('❌ Vendor_Logger: Invalid log level: ' . $level . ' (mapped to: ' . $file_key . ')');
+            return false;
         }
         
         $timestamp = date('Y-m-d H:i:s');
@@ -127,15 +195,17 @@ class Vendor_Logger {
         
         $log_entry .= " - {$message}" . PHP_EOL;
         
-        // نوشتن در فایل لاگ مربوطه
-        $log_file = self::$log_dir . self::$log_files[$level];
-        file_put_contents($log_file, $log_entry, FILE_APPEND | LOCK_EX);
+        // نوشتن در فایل لاگ مربوطه با متد ایمن
+        $log_file = self::$log_dir . self::$log_files[$file_key];
+        $success = self::safe_file_put_contents($log_file, $log_entry, FILE_APPEND);
         
-        // همچنین در فایل عمومی هم ثبت شود
-        if ($level !== 'general') {
+        // همچنین در فایل عمومی هم ثبت شود (به جز خود فایل عمومی)
+        if ($success && $file_key !== 'general') {
             $general_log_file = self::$log_dir . self::$log_files['general'];
-            file_put_contents($general_log_file, $log_entry, FILE_APPEND | LOCK_EX);
+            self::safe_file_put_contents($general_log_file, $log_entry, FILE_APPEND);
         }
+        
+        return $success;
     }
     
     /**
@@ -155,24 +225,44 @@ class Vendor_Logger {
     }
     
     /**
-     * دریافت لاگ‌های اخیر
+     * دریافت لاگ‌های اخیر - با مدیریت خطا
      */
     public static function get_recent_logs($level = 'general', $limit = 100) {
         if (self::$log_dir === null) {
             self::init();
         }
         
-        $log_file = self::$log_dir . self::$log_files[$level];
-        if (!file_exists($log_file)) {
+        // 🔥 نگاشت سطح‌های لاگ
+        $log_level_map = [
+            self::LOG_LEVEL_ERROR => 'error',
+            self::LOG_LEVEL_SUCCESS => 'success',
+            self::LOG_LEVEL_INFO => 'info',
+            self::LOG_LEVEL_WARNING => 'warning', 
+            self::LOG_LEVEL_DEBUG => 'debug',
+            'api' => 'api'
+        ];
+        
+        $file_key = isset($log_level_map[$level]) ? $log_level_map[$level] : $level;
+        
+        if (!isset(self::$log_files[$file_key])) {
             return [];
         }
         
-        $lines = file($log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $log_file = self::$log_dir . self::$log_files[$file_key];
+        if (!file_exists($log_file) || !is_readable($log_file)) {
+            return [];
+        }
+        
+        $lines = @file($log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($lines === false) {
+            return [];
+        }
+        
         return array_slice(array_reverse($lines), 0, $limit);
     }
     
     /**
-     * پاک کردن لاگ‌های قدیمی
+     * پاک کردن لاگ‌های قدیمی - با مدیریت خطا
      */
     public static function cleanup_old_logs($days = 30) {
         if (self::$log_dir === null) {
@@ -183,30 +273,36 @@ class Vendor_Logger {
         
         foreach (self::$log_files as $file) {
             $log_file = self::$log_dir . $file;
-            if (file_exists($log_file)) {
-                // ایجاد فایل جدید و کپی کردن خطوط جدید
-                $lines = file($log_file);
-                $new_lines = [];
-                
-                foreach ($lines as $line) {
-                    if (preg_match('/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/', $line, $matches)) {
-                        $log_time = strtotime($matches[1]);
-                        if ($log_time >= $cutoff_time) {
-                            $new_lines[] = $line;
-                        }
-                    } else {
-                        // اگر تاریخ مشخص نیست، نگه دار
+            if (!file_exists($log_file) || !is_writable($log_file)) {
+                continue;
+            }
+            
+            // ایجاد فایل جدید و کپی کردن خطوط جدید
+            $lines = @file($log_file);
+            if ($lines === false) {
+                continue;
+            }
+            
+            $new_lines = [];
+            
+            foreach ($lines as $line) {
+                if (preg_match('/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/', $line, $matches)) {
+                    $log_time = strtotime($matches[1]);
+                    if ($log_time >= $cutoff_time) {
                         $new_lines[] = $line;
                     }
+                } else {
+                    // اگر تاریخ مشخص نیست، نگه دار
+                    $new_lines[] = $line;
                 }
-                
-                file_put_contents($log_file, implode('', $new_lines));
             }
+            
+            self::safe_file_put_contents($log_file, implode('', $new_lines));
         }
     }
     
     /**
-     * دریافت آمار لاگ‌ها
+     * دریافت آمار لاگ‌ها - با مدیریت خطا
      */
     public static function get_log_stats() {
         if (self::$log_dir === null) {
@@ -216,16 +312,49 @@ class Vendor_Logger {
         $stats = [];
         foreach (self::$log_files as $type => $file) {
             $log_file = self::$log_dir . $file;
-            if (file_exists($log_file)) {
+            if (file_exists($log_file) && is_readable($log_file)) {
                 $stats[$type] = [
                     'size' => size_format(filesize($log_file)),
                     'lines' => count(file($log_file)),
                     'last_modified' => date('Y-m-d H:i:s', filemtime($log_file))
                 ];
+            } else {
+                $stats[$type] = [
+                    'size' => '0 بایت',
+                    'lines' => 0,
+                    'last_modified' => 'هرگز'
+                ];
             }
         }
         
         return $stats;
+    }
+    
+    /**
+     * بررسی سلامت سیستم لاگ‌گیری
+     */
+    public static function health_check() {
+        if (self::$log_dir === null) {
+            self::init();
+        }
+        
+        $health = [
+            'log_dir_exists' => file_exists(self::$log_dir),
+            'log_dir_writable' => is_writable(self::$log_dir),
+            'files' => []
+        ];
+        
+        foreach (self::$log_files as $type => $file) {
+            $log_file = self::$log_dir . $file;
+            $health['files'][$type] = [
+                'exists' => file_exists($log_file),
+                'writable' => is_writable($log_file),
+                'readable' => is_readable($log_file),
+                'size' => file_exists($log_file) ? filesize($log_file) : 0
+            ];
+        }
+        
+        return $health;
     }
 }
 

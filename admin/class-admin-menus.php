@@ -26,7 +26,7 @@ class Admin_Menus {
             'دریافت قیمت‌ها',
             'manage_woocommerce',
             'vendor-sync-prices',
-            ['Admin_Pages', 'render_sync_prices_page']
+            ['Admin_Pages', 'render_price_sync_page']
         );
         
         add_submenu_page(

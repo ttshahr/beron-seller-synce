@@ -45,6 +45,22 @@ class Meta_Definitions {
             'label' => 'درصد تبدیل قیمت همکاری',
             'type' => 'number',
             'step' => '0.01'
+        ],
+        // 🔥 اضافه کردن متای نوع موجودی
+        'vendor_stock_type' => [
+            'label' => 'نوع مدیریت موجودی',
+            'type' => 'select',
+            'options' => [
+                'managed' => 'مدیریت عددی موجودی',
+                'status' => 'مدیریت وضعیتی موجودی'
+            ],
+            'description' => 'نحوه مدیریت موجودی محصولات توسط فروشنده'
+        ],
+        // 🔥 اضافه کردن متای کلید قیمت همکاری
+        'vendor_cooperation_price_meta_key' => [
+            'label' => 'کلید متای قیمت همکاری',
+            'type' => 'text',
+            'description' => 'نام متا فیلدی که قیمت همکاری در آن ذخیره می‌شود'
         ]
     ];
 }
