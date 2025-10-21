@@ -330,4 +330,22 @@ private static function get_vendor_products_count_from_api($meta) {
         
         return 'اختصاص خودکار را اجرا کنید';
     }
+    
+    
+    /**
+     * 🆕 تعداد واقعی محصولات فروشنده بر اساس نویسنده
+     */
+    public static function get_vendor_real_products_count($vendor_id) {
+        global $wpdb;
+        
+        return $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) FROM {$wpdb->posts} 
+            WHERE post_type = 'product' 
+            AND post_status = 'publish'
+            AND post_author = %d
+        ", $vendor_id));
+    }
+    
+    
+    
 }

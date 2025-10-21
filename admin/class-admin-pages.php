@@ -156,19 +156,20 @@ public static function render_main_page() {
                 <table class="form-table">
                     <tr>
                         <th><label for="vendor_id">انتخاب فروشنده</label></th>
-                        <td>
-                            <select name="vendor_id" id="vendor_id" required style="min-width: 300px;">
-                                <option value="">-- انتخاب فروشنده --</option>
-                                <?php foreach ($vendors as $vendor): 
-                                    $product_count = Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
-                                ?>
-                                    <option value="<?php echo $vendor->ID; ?>">
-                                        <?php echo esc_html($vendor->display_name); ?> 
-                                        (<?php echo $product_count; ?> محصول)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
+                            <td>
+                                <select name="vendor_id" id="vendor_id" required style="min-width: 300px;">
+                                    <option value="">-- انتخاب فروشنده --</option>
+                                    <?php foreach ($vendors as $vendor): 
+                                        // 🔥 تغییر این خط - استفاده از متد جدید
+                                        $product_count = Vendor_Product_Assigner::get_vendor_real_products_count($vendor->ID);
+                                    ?>
+                                        <option value="<?php echo $vendor->ID; ?>">
+                                            <?php echo esc_html($vendor->display_name); ?> 
+                                            (<?php echo $product_count; ?> محصول)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
                     </tr>
                     <tr>
                         <th><label for="product_brand">برند محصولات (اختیاری)</label></th> <!-- تغییر عنوان -->
@@ -190,7 +191,7 @@ public static function render_main_page() {
         <?php
     }
     
-    public static function render_calculate_form() {
+public static function render_calculate_form() {
     $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
     $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
     ?>
@@ -356,4 +357,5 @@ public static function render_main_page() {
             WHERE meta_key = %s AND meta_value > '0'
         ", $meta_key));
     }
+
 }
