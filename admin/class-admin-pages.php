@@ -140,9 +140,12 @@ class Admin_Pages {
     }
     
     public static function render_sync_prices_form() {
-        $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
-        ?>
+    $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
+    $brands = get_terms([
+        'taxonomy' => 'product_brand', // تغییر به تکسونومی سفارشی
+        'hide_empty' => false
+    ]);
+    ?>
         <div class="card">
             <h2>📥 دریافت قیمت‌های خام از فروشنده</h2>
             <p>این عملیات قیمت‌های اصلی را از فروشنده دریافت و در متای <code>_seller_list_price</code> ذخیره می‌کند.</p>
@@ -168,15 +171,15 @@ class Admin_Pages {
                         </td>
                     </tr>
                     <tr>
-                        <th><label for="product_cat">دسته محصولات (اختیاری)</label></th>
+                        <th><label for="product_brand">برند محصولات (اختیاری)</label></th> <!-- تغییر عنوان -->
                         <td>
-                            <select name="product_cat" id="product_cat" style="min-width: 300px;">
-                                <option value="all">همه دسته‌ها</option>
-                                <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo $cat->term_id; ?>"><?php echo esc_html($cat->name); ?></option>
+                            <select name="product_brand" id="product_brand" style="min-width: 300px;"> <!-- تغییر نام فیلد -->
+                                <option value="all">همه برندها</option> <!-- تغییر متن -->
+                                <?php foreach ($brands as $brand): ?>
+                                    <option value="<?php echo $brand->term_id; ?>"><?php echo esc_html($brand->name); ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">در صورت انتخاب دسته خاص، فقط محصولات آن دسته پردازش می‌شوند.</p>
+                            <p class="description">در صورت انتخاب برند خاص، فقط محصولات آن برند پردازش می‌شوند.</p> <!-- تغییر توضیحات -->
                         </td>
                     </tr>
                 </table>
@@ -188,17 +191,28 @@ class Admin_Pages {
     }
     
     public static function render_calculate_form() {
+<<<<<<< HEAD
     $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
     $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
     ?>
 
     <div class="card">
         <h2>🧮 محاسبه قیمت‌های نهایی</h2>
+=======
+        $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
+        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
+        
+        // اضافه کردن ماژول پیشرفت
+        Progress_Manager::render_progress_html('price');
+        Progress_Manager::render_progress_script('price');
+        ?>
+>>>>>>> bf99609c1424847c06d78264cba0f07c4c8f777f
         
         <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
             <input type="hidden" name="action" value="calculate_vendor_prices">
             <?php wp_nonce_field('calculate_vendor_prices_nonce', '_wpnonce'); ?>
             
+<<<<<<< HEAD
             <table class="form-table">
                 <tr>
                     <th><label for="calc_vendor_id">فروشنده</label></th>
@@ -245,6 +259,107 @@ class Admin_Pages {
         </form>
     </div>
     <?php
+=======
+            <form id="price-calc-form">
+                <?php wp_nonce_field('calculate_prices_nonce', '_ajax_nonce'); ?>
+                
+                <table class="form-table">
+                    <tr>
+                        <th><label for="calc_vendor_id">فروشنده</label></th>
+                        <td>
+                            <select name="vendor_id" id="calc_vendor_id" required style="min-width: 300px;">
+                                <option value="">-- انتخاب فروشنده --</option>
+                                <?php foreach ($vendors as $vendor): 
+                                    $product_count = Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
+                                ?>
+                                    <option value="<?php echo $vendor->ID; ?>">
+                                        <?php echo esc_html($vendor->display_name); ?> 
+                                        (<?php echo $product_count; ?> محصول)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th><label for="calc_conversion_percent">درصد افزودن به قیمت</label></th>
+                        <td>
+                            <input type="number" name="conversion_percent" id="calc_conversion_percent" 
+                                   value="15" min="0" max="1000" step="0.1" style="width: 150px;" required>
+                            <span>%</span>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th><label for="calc_product_cat">دسته محصولات</label></th>
+                        <td>
+                            <select name="product_cat" id="calc_product_cat" style="min-width: 300px;">
+                                <option value="all">همه دسته‌ها</option>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?php echo $cat->term_id; ?>"><?php echo esc_html($cat->name); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+                
+                <button type="button" id="start-price-calc-ajax" class="button button-primary">
+                    شروع محاسبه قیمت (سیستم جدید)
+                </button>
+            </form>
+            
+            <div id="price-calc-result" style="margin-top:20px;"></div>
+        </div>
+    
+        <script>
+        jQuery(document).ready(function($){
+            $('#start-price-calc-ajax').click(function(){
+                var vendorId = $('#calc_vendor_id').val();
+                var percent = $('#calc_conversion_percent').val();
+                var category = $('#calc_product_cat').val();
+                var nonce = $('#_ajax_nonce').val();
+                
+                if (!vendorId || !percent) {
+                    alert('لطفا فروشنده و درصد را انتخاب کنید.');
+                    return;
+                }
+                
+                // ایجاد Job ID
+                var jobId = 'price_calc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                
+                // نمایش نوار پیشرفت
+                $('#progress-container-price').show();
+                window.progressManagerPrice.start(jobId);
+                
+                // فراخوانی AJAX
+                $.post(ajaxurl, {
+                    action: 'calculate_final_prices_ajax',
+                    vendor_id: vendorId,
+                    conversion_percent: percent,
+                    product_cat: category,
+                    job_id: jobId,
+                    _wpnonce: nonce
+                }, function(response) {
+                    if (response.success) {
+                        console.log('محاسبه کامل شد:', response.data);
+                    } else {
+                        console.error('خطا:', response.data);
+                        // نمایش خطا به کاربر
+                        $('#price-calc-result').html(
+                            '<div class="notice notice-error"><p>خطا: ' + response.data + '</p></div>'
+                        );
+                    }
+                }).fail(function(xhr, status, error) {
+                    console.error('خطای ارتباط:', error);
+                    $('#price-calc-result').html(
+                        '<div class="notice notice-error"><p>خطای ارتباط با سرور</p></div>'
+                    );
+                });
+            });
+        });
+        </script>
+        <?php
+>>>>>>> bf99609c1424847c06d78264cba0f07c4c8f777f
     }
     
     public static function render_stocks_form() {

@@ -6,7 +6,7 @@ class Vendor_Raw_Price_Saver_Optimized {
     private static $batch_size = 50;
     private static $api_delay = 100000; // 0.1 ثانیه
     
-    public static function save_raw_prices_optimized($vendor_id, $cat_id) {
+    public static function save_raw_prices_optimized($vendor_id, $brand_id) {
         $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
         
         // تنظیمات بهینه‌شده سرعت و حافظه
@@ -15,15 +15,15 @@ class Vendor_Raw_Price_Saver_Optimized {
         wp_suspend_cache_addition(true);
         wp_defer_term_counting(true);
         
-        Vendor_Logger::log_info("🚀 Starting ULTRA-OPTIMIZED price sync for vendor {$vendor_id}", $vendor_id);
+        Vendor_Logger::log_info("🚀 Starting ULTRA-OPTIMIZED price sync for vendor {$vendor_id} with brand filter: {$brand_id}", $vendor_id);
         
         try {
             // دریافت محصولات محلی
-            $local_products = self::get_local_products_optimized($cat_id, $vendor_id);
+            $local_products = self::get_local_products_optimized($brand_id, $vendor_id);
             
             if (empty($local_products)) {
-                Vendor_Logger::log_warning("No local products found for price sync", null, $vendor_id);
-                throw new Exception('هیچ محصولی برای این فروشنده یافت نشد.');
+                Vendor_Logger::log_warning("No local products found for price sync with brand: {$brand_id}", null, $vendor_id);
+                throw new Exception('هیچ محصولی برای این فروشنده و برند انتخاب شده یافت نشد.');
             }
             
             Vendor_Logger::log_info("📦 Found " . count($local_products) . " local products to process", $vendor_id);
@@ -298,9 +298,9 @@ class Vendor_Raw_Price_Saver_Optimized {
     }
     
     /**
-     * دریافت محصولات محلی بهینه‌شده
+     * دریافت محصولات محلی بهینه‌شده با فیلتر بر اساس برند
      */
-    private static function get_local_products_optimized($cat_id, $vendor_id) {
+    private static function get_local_products_optimized($brand_id, $vendor_id) {
         global $wpdb;
         
         $sql = "SELECT p.ID as id, pm.meta_value as sku 
@@ -314,20 +314,20 @@ class Vendor_Raw_Price_Saver_Optimized {
         
         $params = [$vendor_id];
         
-        // فیلتر بر اساس دسته
-        if ($cat_id !== 'all') {
+        // فیلتر بر اساس برند - تغییر به تکسونومی product_brand
+        if ($brand_id !== 'all') {
             $sql .= " AND p.ID IN (
                 SELECT object_id FROM {$wpdb->term_relationships} 
                 WHERE term_taxonomy_id = %d
             )";
-            $params[] = intval($cat_id);
+            $params[] = intval($brand_id);
         }
         
         $sql .= " ORDER BY p.ID ASC";
         
         $results = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
         
-        Vendor_Logger::log_info("📊 Local products query returned " . count($results) . " results", $vendor_id);
+        Vendor_Logger::log_info("📊 Local products query returned " . count($results) . " results (Brand ID: {$brand_id})", $vendor_id);
         
         return $results;
     }
@@ -348,8 +348,8 @@ class Vendor_Raw_Price_Saver_Optimized {
     /**
      * دریافت گزارش وضعیت
      */
-    public static function get_price_sync_report($vendor_id, $cat_id) {
-        $local_products = self::get_local_products_optimized($cat_id, $vendor_id);
+    public static function get_price_sync_report($vendor_id, $brand_id) {
+        $local_products = self::get_local_products_optimized($brand_id, $vendor_id);
         
         $report = [
             'total_local_products' => count($local_products),
@@ -357,7 +357,7 @@ class Vendor_Raw_Price_Saver_Optimized {
             'message' => 'برای مشاهده جزئیات کامل، عملیات بروزرسانی قیمت را اجرا کنید.'
         ];
         
-        Vendor_Logger::log_info("📈 Price sync report generated", $vendor_id);
+        Vendor_Logger::log_info("📈 Price sync report generated for brand: {$brand_id}", $vendor_id);
         
         return $report;
     }
