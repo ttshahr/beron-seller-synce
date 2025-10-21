@@ -3,7 +3,7 @@ if (!defined('ABSPATH')) exit;
 
 class Admin_Pages {
     
-    public static function render_main_page() {
+public static function render_main_page() {
     ?>
     <div class="wrap">
         <h1>مدیریت همگام‌سازی محصولات فروشندگان</h1>
@@ -33,7 +33,7 @@ class Admin_Pages {
         </div>
     </div>
     <?php
-    }
+}
     
     public static function render_sync_prices_page() {
         ?>
@@ -191,28 +191,17 @@ class Admin_Pages {
     }
     
     public static function render_calculate_form() {
-<<<<<<< HEAD
     $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
     $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
     ?>
-
+    
     <div class="card">
         <h2>🧮 محاسبه قیمت‌های نهایی</h2>
-=======
-        $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
-        
-        // اضافه کردن ماژول پیشرفت
-        Progress_Manager::render_progress_html('price');
-        Progress_Manager::render_progress_script('price');
-        ?>
->>>>>>> bf99609c1424847c06d78264cba0f07c4c8f777f
         
         <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
             <input type="hidden" name="action" value="calculate_vendor_prices">
             <?php wp_nonce_field('calculate_vendor_prices_nonce', '_wpnonce'); ?>
             
-<<<<<<< HEAD
             <table class="form-table">
                 <tr>
                     <th><label for="calc_vendor_id">فروشنده</label></th>
@@ -236,7 +225,7 @@ class Admin_Pages {
                     <th><label for="calc_conversion_percent">درصد افزودن به قیمت</label></th>
                     <td>
                         <input type="number" name="conversion_percent" id="calc_conversion_percent" 
-                                value="15" min="0" max="1000" step="0.1" style="width: 150px;" required>
+                               value="15" min="0" max="1000" step="0.1" style="width: 150px;" required>
                         <span>%</span>
                         <p class="description">مثلاً برای 15% افزایش قیمت، عدد 15 را وارد کنید</p>
                     </td>
@@ -259,20 +248,80 @@ class Admin_Pages {
         </form>
     </div>
     <?php
-=======
-            <form id="price-calc-form">
-                <?php wp_nonce_field('calculate_prices_nonce', '_ajax_nonce'); ?>
+}
+    
+    public static function render_stocks_form() {
+        $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
+        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
+        $current_vendor_id = isset($_GET['vendor_id']) ? intval($_GET['vendor_id']) : 0;
+        ?>
+        
+        <div class="card" style="margin-bottom: 20px; background: #f0f6ff; border-left: 4px solid #1e40af;">
+            <h3 style="color: #1e40af; margin-top: 0;">🤖 مدیریت اختصاص محصولات</h3>
+            
+            <?php if ($current_vendor_id): 
+                $status = Vendor_Product_Assigner::get_assignment_status($current_vendor_id);
+            ?>
+                <div style="background: white; padding: 15px; border-radius: 5px; margin: 10px 0;">
+                    <h4>📊 وضعیت فعلی:</h4>
+                    <ul>
+                        <li>اتصال: <?php echo $status['connection']['success'] ? '✅ متصل' : '❌ قطع'; ?></li>
+                        <li>محصولات فروشنده: <strong><?php echo $status['vendor_products_count']; ?></strong></li>
+                        <li>محصولات اختصاص داده شده: <strong><?php echo $status['assigned_products_count']; ?></strong></li>
+                        <li>محصولات با قیمت (بدون اختصاص): <strong><?php echo $status['products_with_price_unassigned']; ?></strong></li>
+                    </ul>
+                    <p><strong>پیشنهاد:</strong> <?php echo $status['recommendation']; ?></p>
+                </div>
+            <?php endif; ?>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                    <input type="hidden" name="action" value="assign_vendor_products">
+                    <input type="hidden" name="vendor_id" id="assign_vendor_id">
+                    <button type="submit" class="button button-primary" style="width: 100%;">
+                        🔄 اختصاص خودکار
+                    </button>
+                    <p style="font-size: 12px; margin: 5px 0 0 0;">همه محصولات را بررسی می‌کند</p>
+                </form>
+                
+                <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                    <input type="hidden" name="action" value="assign_smart_vendor_products">
+                    <input type="hidden" name="vendor_id" id="assign_smart_vendor_id">
+                    <button type="submit" class="button button-secondary" style="width: 100%;">
+                        🧠 اختصاص هوشمند
+                    </button>
+                    <p style="font-size: 12px; margin: 5px 0 0 0;">فقط محصولات با قیمت را اختصاص می‌دهد</p>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📦 بروزرسانی موجودی از فروشنده</h2>
+            <p>این عملیات موجودی محصولات را از فروشنده دریافت و بروزرسانی می‌کند.</p>
+            
+            <div id="stock-report-container" style="display: none; margin-bottom: 15px; padding: 15px; background: #f0f9ff; border-radius: 5px; border-left: 4px solid #1e40af;">
+                <h4 style="margin-top: 0;">📊 پیش‌نمایش بروزرسانی:</h4>
+                <div id="stock-report-content"></div>
+                <button type="button" id="hide-report" class="button" style="margin-top: 10px;">بستن</button>
+            </div>
+
+            <button type="button" id="preview-stock-update" class="button button-secondary" style="margin-bottom: 15px;">
+                🔍 پیش‌نمایش بروزرسانی
+            </button>
+            
+            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
+                <input type="hidden" name="action" value="update_vendor_stocks">
                 
                 <table class="form-table">
                     <tr>
-                        <th><label for="calc_vendor_id">فروشنده</label></th>
+                        <th><label for="stock_vendor_id">انتخاب فروشنده</label></th>
                         <td>
-                            <select name="vendor_id" id="calc_vendor_id" required style="min-width: 300px;">
+                            <select name="vendor_id" id="stock_vendor_id" required style="min-width: 300px;">
                                 <option value="">-- انتخاب فروشنده --</option>
                                 <?php foreach ($vendors as $vendor): 
                                     $product_count = Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
                                 ?>
-                                    <option value="<?php echo $vendor->ID; ?>">
+                                    <option value="<?php echo $vendor->ID; ?>" <?php selected($current_vendor_id, $vendor->ID); ?>>
                                         <?php echo esc_html($vendor->display_name); ?> 
                                         (<?php echo $product_count; ?> محصول)
                                     </option>
@@ -280,185 +329,24 @@ class Admin_Pages {
                             </select>
                         </td>
                     </tr>
-                    
                     <tr>
-                        <th><label for="calc_conversion_percent">درصد افزودن به قیمت</label></th>
+                        <th><label for="stock_product_cat">دسته محصولات (اختیاری)</label></th>
                         <td>
-                            <input type="number" name="conversion_percent" id="calc_conversion_percent" 
-                                   value="15" min="0" max="1000" step="0.1" style="width: 150px;" required>
-                            <span>%</span>
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="calc_product_cat">دسته محصولات</label></th>
-                        <td>
-                            <select name="product_cat" id="calc_product_cat" style="min-width: 300px;">
+                            <select name="product_cat" id="stock_product_cat" style="min-width: 300px;">
                                 <option value="all">همه دسته‌ها</option>
                                 <?php foreach ($categories as $cat): ?>
                                     <option value="<?php echo $cat->term_id; ?>"><?php echo esc_html($cat->name); ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="description">در صورت انتخاب "همه دسته‌ها"، سیستم از مالک محصول برای فیلتر کردن استفاده می‌کند.</p>
                         </td>
                     </tr>
                 </table>
                 
-                <button type="button" id="start-price-calc-ajax" class="button button-primary">
-                    شروع محاسبه قیمت (سیستم جدید)
-                </button>
+                <?php submit_button('شروع بروزرسانی موجودی', 'primary', 'submit', true); ?>
             </form>
-            
-            <div id="price-calc-result" style="margin-top:20px;"></div>
         </div>
-    
-        <script>
-        jQuery(document).ready(function($){
-            $('#start-price-calc-ajax').click(function(){
-                var vendorId = $('#calc_vendor_id').val();
-                var percent = $('#calc_conversion_percent').val();
-                var category = $('#calc_product_cat').val();
-                var nonce = $('#_ajax_nonce').val();
-                
-                if (!vendorId || !percent) {
-                    alert('لطفا فروشنده و درصد را انتخاب کنید.');
-                    return;
-                }
-                
-                // ایجاد Job ID
-                var jobId = 'price_calc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                
-                // نمایش نوار پیشرفت
-                $('#progress-container-price').show();
-                window.progressManagerPrice.start(jobId);
-                
-                // فراخوانی AJAX
-                $.post(ajaxurl, {
-                    action: 'calculate_final_prices_ajax',
-                    vendor_id: vendorId,
-                    conversion_percent: percent,
-                    product_cat: category,
-                    job_id: jobId,
-                    _wpnonce: nonce
-                }, function(response) {
-                    if (response.success) {
-                        console.log('محاسبه کامل شد:', response.data);
-                    } else {
-                        console.error('خطا:', response.data);
-                        // نمایش خطا به کاربر
-                        $('#price-calc-result').html(
-                            '<div class="notice notice-error"><p>خطا: ' + response.data + '</p></div>'
-                        );
-                    }
-                }).fail(function(xhr, status, error) {
-                    console.error('خطای ارتباط:', error);
-                    $('#price-calc-result').html(
-                        '<div class="notice notice-error"><p>خطای ارتباط با سرور</p></div>'
-                    );
-                });
-            });
-        });
-        </script>
         <?php
->>>>>>> bf99609c1424847c06d78264cba0f07c4c8f777f
-    }
-    
-    public static function render_stocks_form() {
-    $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-    $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
-    $current_vendor_id = isset($_GET['vendor_id']) ? intval($_GET['vendor_id']) : 0;
-    ?>
-    
-    <div class="card" style="margin-bottom: 20px; background: #f0f6ff; border-left: 4px solid #1e40af;">
-        <h3 style="color: #1e40af; margin-top: 0;">🤖 مدیریت اختصاص محصولات</h3>
-        
-        <?php if ($current_vendor_id): 
-            $status = Vendor_Product_Assigner::get_assignment_status($current_vendor_id);
-        ?>
-            <div style="background: white; padding: 15px; border-radius: 5px; margin: 10px 0;">
-                <h4>📊 وضعیت فعلی:</h4>
-                <ul>
-                    <li>اتصال: <?php echo $status['connection']['success'] ? '✅ متصل' : '❌ قطع'; ?></li>
-                    <li>محصولات فروشنده: <strong><?php echo $status['vendor_products_count']; ?></strong></li>
-                    <li>محصولات اختصاص داده شده: <strong><?php echo $status['assigned_products_count']; ?></strong></li>
-                    <li>محصولات با قیمت (بدون اختصاص): <strong><?php echo $status['products_with_price_unassigned']; ?></strong></li>
-                </ul>
-                <p><strong>پیشنهاد:</strong> <?php echo $status['recommendation']; ?></p>
-            </div>
-        <?php endif; ?>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
-            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
-                <input type="hidden" name="action" value="assign_vendor_products">
-                <input type="hidden" name="vendor_id" id="assign_vendor_id">
-                <button type="submit" class="button button-primary" style="width: 100%;">
-                    🔄 اختصاص خودکار
-                </button>
-                <p style="font-size: 12px; margin: 5px 0 0 0;">همه محصولات را بررسی می‌کند</p>
-            </form>
-            
-            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
-                <input type="hidden" name="action" value="assign_smart_vendor_products">
-                <input type="hidden" name="vendor_id" id="assign_smart_vendor_id">
-                <button type="submit" class="button button-secondary" style="width: 100%;">
-                    🧠 اختصاص هوشمند
-                </button>
-                <p style="font-size: 12px; margin: 5px 0 0 0;">فقط محصولات با قیمت را اختصاص می‌دهد</p>
-            </form>
-        </div>
-    </div>
-
-    <div class="card">
-        <h2>📦 بروزرسانی موجودی از فروشنده</h2>
-        <p>این عملیات موجودی محصولات را از فروشنده دریافت و بروزرسانی می‌کند.</p>
-        
-        <div id="stock-report-container" style="display: none; margin-bottom: 15px; padding: 15px; background: #f0f9ff; border-radius: 5px; border-left: 4px solid #1e40af;">
-            <h4 style="margin-top: 0;">📊 پیش‌نمایش بروزرسانی:</h4>
-            <div id="stock-report-content"></div>
-            <button type="button" id="hide-report" class="button" style="margin-top: 10px;">بستن</button>
-        </div>
-
-        <button type="button" id="preview-stock-update" class="button button-secondary" style="margin-bottom: 15px;">
-            🔍 پیش‌نمایش بروزرسانی
-        </button>
-        
-        <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
-            <input type="hidden" name="action" value="update_vendor_stocks">
-            
-            <table class="form-table">
-                <tr>
-                    <th><label for="stock_vendor_id">انتخاب فروشنده</label></th>
-                    <td>
-                        <select name="vendor_id" id="stock_vendor_id" required style="min-width: 300px;">
-                            <option value="">-- انتخاب فروشنده --</option>
-                            <?php foreach ($vendors as $vendor): 
-                                $product_count = Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
-                            ?>
-                                <option value="<?php echo $vendor->ID; ?>" <?php selected($current_vendor_id, $vendor->ID); ?>>
-                                    <?php echo esc_html($vendor->display_name); ?> 
-                                    (<?php echo $product_count; ?> محصول)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </td>
-                </tr>
-                <tr>
-                    <th><label for="stock_product_cat">دسته محصولات (اختیاری)</label></th>
-                    <td>
-                        <select name="product_cat" id="stock_product_cat" style="min-width: 300px;">
-                            <option value="all">همه دسته‌ها</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?php echo $cat->term_id; ?>"><?php echo esc_html($cat->name); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <p class="description">در صورت انتخاب "همه دسته‌ها"، سیستم از مالک محصول برای فیلتر کردن استفاده می‌کند.</p>
-                    </td>
-                </tr>
-            </table>
-            
-            <?php submit_button('شروع بروزرسانی موجودی', 'primary', 'submit', true); ?>
-        </form>
-    </div>
-    <?php
     }
     
     private static function count_products_with_meta($meta_key) {
