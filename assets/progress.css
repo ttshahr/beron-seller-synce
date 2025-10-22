@@ -119,3 +119,187 @@
     0% { transform: translateY(-50%) rotate(0deg); }
     100% { transform: translateY(-50%) rotate(360deg); }
 }
+
+
+
+/* استایل‌های تب‌ها */
+.nav-tab-wrapper {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ccc;
+}
+
+.nav-tab {
+    padding: 8px 15px;
+    margin-right: 5px;
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    text-decoration: none;
+    color: #0073aa;
+    border-radius: 4px 4px 0 0;
+}
+
+.nav-tab-active {
+    background: #fff;
+    border-bottom: 1px solid #fff;
+    margin-bottom: -1px;
+    color: #000;
+}
+
+/* بازنویسی استایل کارت برای صفحه لاگ‌ها */
+.vendor-sync-debug-page .card,
+.log-viewer-container .card,
+.log-display-section .card,
+.log-info-section .card,
+.full-width-card {
+    max-width: none !important;
+    width: 100% !important;
+}
+
+/* استایل‌های خاص برای صفحه دیباگ */
+.wrap .card[style*="height"] {
+    max-width: none !important;
+}
+
+/* استایل‌های اصلی برای مشاهده لاگ */
+.log-viewer-container {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 20px;
+    align-items: start;
+}
+
+.log-display-section .card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    margin-top: 0;
+}
+
+.log-filters {
+    background: #f9f9f9;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    border: 1px solid #e1e1e1;
+}
+
+.log-viewer {
+    background: #1e1e1e !important;
+    color: #d4d4d4 !important;
+    padding: 15px;
+    border-radius: 4px;
+    height: calc(100vh - 300px);
+    min-height: 500px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    border: 1px solid #444;
+    flex: 1;
+}
+
+.log-line {
+    border-bottom: 1px solid #333;
+    padding: 8px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    transition: background-color 0.2s ease;
+}
+
+.log-line:hover {
+    background-color: #2a2a2a;
+}
+
+/* استایل‌های بخش اطلاعات */
+.log-info-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.log-stats {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.stat-box {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    background: #fafafa;
+    border-left: 4px solid #0073aa;
+    transition: all 0.3s ease;
+}
+
+.stat-box:hover {
+    background: #f0f7ff;
+    transform: translateX(-2px);
+}
+
+/* اسکرول بار برای نمایشگر لاگ */
+.log-viewer::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-viewer::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+.log-viewer::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.log-viewer::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+/* واکنش‌گرایی */
+@media (max-width: 1200px) {
+    .log-viewer-container {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .log-info-section {
+        order: -1;
+    }
+    
+    .log-viewer {
+        height: 400px;
+    }
+}
+
+@media (max-width: 768px) {
+    .log-filters form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .log-filters form > div {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+}
+
+/* استایل‌های پیشرفت (موجود) */
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #f1f1f1;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.progress-bar-inner {
+    height: 100%;
+    background: #0073aa;
+    transition: width 0.3s ease;
+    text-align: center;
+    color: white;
+    font-size: 12px;
+    line-height: 20px;
+}
