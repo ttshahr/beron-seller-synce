@@ -8,7 +8,7 @@ class Sale_Profit_Calculator {
     public function __construct() {
         add_action('wp_ajax_calculate_sale_profit', [$this, 'calculate_profit_ajax']);
         add_action('wp_ajax_get_profit_progress', [$this, 'get_progress_ajax']);
-        Vendor_Logger::log_info('Sale Profit Calculator initialized');
+        // Vendor_Logger::log_info('Sale Profit Calculator initialized');
     }
 
     public function render_page() {

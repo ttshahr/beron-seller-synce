@@ -128,16 +128,26 @@ class Admin_Debug_Pages {
                     
                     <!-- نمایش لاگ‌ها -->
                     <?php if (!empty($logs)): ?>
-                        <div class="log-viewer">
-                            <?php foreach ($logs as $log_line): ?>
-                                <div class="log-line">
-                                    <?php echo self::format_log_line($log_line); ?>
+                        <div class="log-viewer-terminal">
+                            <div class="terminal-header">
+                                <div class="terminal-controls">
+                                    <span class="control close"></span>
+                                    <span class="control minimize"></span>
+                                    <span class="control maximize"></span>
                                 </div>
-                            <?php endforeach; ?>
+                                <span class="terminal-title">terminal.log</span>
+                            </div>
+                            <div class="terminal-body">
+                                <?php foreach ($logs as $log_line): ?>
+                                    <div class="log-line-terminal">
+                                        <?php echo self::format_log_line_terminal($log_line); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     <?php else: ?>
-                        <div style="text-align: center; padding: 40px; color: #666; flex: 1; display: flex; flex-direction: column; justify-content: center;">
-                            <span style="font-size: 48px;">📝</span>
+                        <div class="no-logs-message">
+                            <span class="no-logs-icon">📝</span>
                             <h3>هیچ لاگی برای نمایش وجود ندارد</h3>
                             <p>لاگ‌های <?php echo esc_html($log_types[$selected_log_type] ?? $selected_log_type); ?> خالی هستند.</p>
                         </div>
@@ -262,31 +272,133 @@ class Admin_Debug_Pages {
                 border: 1px solid #e1e1e1;
             }
 
-            .log-viewer {
-                background: #1e1e1e !important;
-                color: #d4d4d4 !important;
-                padding: 15px;
-                border-radius: 4px;
-                height: calc(100vh - 300px);
-                min-height: 500px;
-                overflow-y: auto;
-                font-family: 'Courier New', monospace;
-                font-size: 13px;
-                line-height: 1.5;
+            /* استایل ترمینال برای نمایش لاگ‌ها */
+            .log-viewer-terminal {
+                background: #1e1e1e;
+                border-radius: 8px;
+                overflow: hidden;
                 border: 1px solid #444;
                 flex: 1;
+                display: flex;
+                flex-direction: column;
             }
 
-            .log-line {
-                border-bottom: 1px solid #333;
-                padding: 8px 0;
+            .terminal-header {
+                background: #363636;
+                padding: 8px 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                border-bottom: 1px solid #444;
+            }
+
+            .terminal-controls {
+                display: flex;
+                gap: 6px;
+            }
+
+            .terminal-controls .control {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+
+            .terminal-controls .control.close {
+                background: #ff5f56;
+            }
+
+            .terminal-controls .control.minimize {
+                background: #ffbd2e;
+            }
+
+            .terminal-controls .control.maximize {
+                background: #27c93f;
+            }
+
+            .terminal-title {
+                color: #ccc;
+                font-size: 12px;
+                font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            }
+
+            .terminal-body {
+                flex: 1;
+                overflow-y: auto;
+                padding: 0;
+                background: #1e1e1e;
+                max-height: calc(100vh - 400px);
+                min-height: 500px;
+            }
+
+            .log-line-terminal {
+                font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+                padding: 2px 12px;
+                margin: 0;
+                border-bottom: 1px solid #2a2a2a;
                 white-space: pre-wrap;
                 word-break: break-all;
-                transition: background-color 0.2s ease;
+                transition: background-color 0.1s ease;
             }
 
-            .log-line:hover {
+            .log-line-terminal:hover {
                 background-color: #2a2a2a;
+            }
+
+            .log-line-terminal:last-child {
+                border-bottom: none;
+            }
+
+            /* استایل برای لاگ‌های خالی */
+            .no-logs-message {
+                text-align: center;
+                padding: 60px 20px;
+                color: #666;
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                background: #f9f9f9;
+                border-radius: 4px;
+                border: 2px dashed #ddd;
+            }
+
+            .no-logs-icon {
+                font-size: 48px;
+                margin-bottom: 15px;
+                opacity: 0.5;
+            }
+
+            .no-logs-message h3 {
+                margin: 0 0 10px 0;
+                color: #555;
+                font-weight: 500;
+            }
+
+            .no-logs-message p {
+                margin: 0;
+                font-size: 14px;
+            }
+
+            /* اسکرول بار برای ترمینال */
+            .terminal-body::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .terminal-body::-webkit-scrollbar-track {
+                background: #1e1e1e;
+            }
+
+            .terminal-body::-webkit-scrollbar-thumb {
+                background: #555;
+                border-radius: 4px;
+            }
+
+            .terminal-body::-webkit-scrollbar-thumb:hover {
+                background: #777;
             }
 
             /* استایل‌های بخش اطلاعات */
@@ -316,24 +428,6 @@ class Admin_Debug_Pages {
                 transform: translateX(-2px);
             }
 
-            /* اسکرول بار برای نمایشگر لاگ */
-            .log-viewer::-webkit-scrollbar {
-                width: 8px;
-            }
-
-            .log-viewer::-webkit-scrollbar-track {
-                background: #1e1e1e;
-            }
-
-            .log-viewer::-webkit-scrollbar-thumb {
-                background: #555;
-                border-radius: 4px;
-            }
-
-            .log-viewer::-webkit-scrollbar-thumb:hover {
-                background: #777;
-            }
-
             /* واکنش‌گرایی */
             @media (max-width: 1200px) {
                 .log-viewer-container {
@@ -344,8 +438,8 @@ class Admin_Debug_Pages {
                     order: -1;
                 }
                 
-                .log-viewer {
-                    height: 400px;
+                .terminal-body {
+                    max-height: 400px;
                 }
             }
 
@@ -366,27 +460,27 @@ class Admin_Debug_Pages {
     }
     
     /**
-     * فرمت‌دهی خطوط لاگ برای نمایش زیباتر
+     * فرمت‌دهی خطوط لاگ برای نمایش ترمینال
      */
-    private static function format_log_line($log_line) {
-        // رنگ‌بندی بر اساس سطح لاگ
+    private static function format_log_line_terminal($log_line) {
         $log_line = esc_html($log_line);
         
+        // حذف ایموجی‌ها و استفاده از رنگ‌بندی ساده
         if (strpos($log_line, '[ERROR]') !== false) {
-            return '<span style="color: #f48771;">❌ ' . $log_line . '</span>';
+            return '<span style="color: #f48771;">' . $log_line . '</span>';
         } elseif (strpos($log_line, '[SUCCESS]') !== false) {
-            return '<span style="color: #85cc95;">✅ ' . $log_line . '</span>';
+            return '<span style="color: #85cc95;">' . $log_line . '</span>';
         } elseif (strpos($log_line, '[WARNING]') !== false) {
-            return '<span style="color: #e2c08d;">⚠️ ' . $log_line . '</span>';
+            return '<span style="color: #e2c08d;">' . $log_line . '</span>';
         } elseif (strpos($log_line, '[INFO]') !== false) {
-            return '<span style="color: #79b8ff;">ℹ️ ' . $log_line . '</span>';
+            return '<span style="color: #79b8ff;">' . $log_line . '</span>';
         } elseif (strpos($log_line, '[DEBUG]') !== false) {
-            return '<span style="color: #b392f0;">🐛 ' . $log_line . '</span>';
+            return '<span style="color: #b392f0;">' . $log_line . '</span>';
         } elseif (strpos($log_line, '[API]') !== false) {
-            return '<span style="color: #56b6c2;">🔌 ' . $log_line . '</span>';
+            return '<span style="color: #56b6c2;">' . $log_line . '</span>';
         }
         
-        return '📝 ' . $log_line;
+        return '<span style="color: #d4d4d4;">' . $log_line . '</span>';
     }
     
     /**
