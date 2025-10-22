@@ -145,113 +145,120 @@ class Vendor_Stock_Updater_Optimized {
      * پردازش بروزرسانی‌های batch
      */
     private static function process_batch_updates($vendor_products, $product_sku_map, $meta, $vendor_id) {
-        $updated_count = 0;
-        $batch_updates = [];
+    $updated_count = 0;
+    $batch_updates = [];
+    
+    Vendor_Logger::log_info("🔄 Starting batch processing with " . count($vendor_products) . " vendor products", $vendor_id);
+    
+    // 🔥 لاگ تمام محصولات فروشنده
+    foreach ($vendor_products as $index => $vendor_product) {
+        $sku = $vendor_product['sku'] ?? 'NO_SKU';
+        $stock_qty = $vendor_product['stock_quantity'] ?? 'NULL';
+        $stock_status = $vendor_product['stock_status'] ?? 'NULL';
         
-        Vendor_Logger::log_debug("Processing batch with " . count($vendor_products) . " vendor products", null, $vendor_id);
-        
-        foreach ($vendor_products as $vendor_product) {
-            if (!empty($vendor_product['sku'])) {
-                $clean_sku = trim($vendor_product['sku']);
-                
-                if (isset($product_sku_map[$clean_sku])) {
-                    $product_id = $product_sku_map[$clean_sku];
-                    
-                    // 🔥 لاگ اطلاعات محصول فروشنده
-                    $stock_quantity = $vendor_product['stock_quantity'] ?? 'N/A';
-                    $stock_status = $vendor_product['stock_status'] ?? 'N/A';
-                    Vendor_Logger::log_debug("Vendor product - SKU: {$clean_sku}, Stock Qty: {$stock_quantity}, Stock Status: {$stock_status}", $product_id, $vendor_id);
-                    
-                    // آماده‌سازی داده‌های بروزرسانی
-                    $update_data = self::prepare_stock_update_data($product_id, $vendor_product, $meta, $vendor_id);
-                    
-                    if ($update_data['should_update']) {
-                        $batch_updates[] = $update_data;
-                        Vendor_Logger::log_debug("Will update product {$product_id}", $product_id, $vendor_id);
-                    } else {
-                        Vendor_Logger::log_debug("No update needed for product {$product_id}", $product_id, $vendor_id);
-                    }
-                } else {
-                    Vendor_Logger::log_warning("SKU not found in local products: {$clean_sku}", null, $vendor_id);
-                }
-            } else {
-                Vendor_Logger::log_warning("Vendor product has empty SKU", null, $vendor_id);
-            }
-            
-            // اجرای batch هر 10 آیتم
-            if (count($batch_updates) >= 10) {
-                $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
-                $batch_updates = [];
-            }
-        }
-        
-        // اجرای باقی‌مانده
-        if (!empty($batch_updates)) {
-            $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
-        }
-        
-        Vendor_Logger::log_info("Batch processing completed: {$updated_count} products updated", $vendor_id);
-        
-        return $updated_count;
+        Vendor_Logger::log_info("📦 Vendor Product {$index}: SKU={$sku}, Qty={$stock_qty}, Status={$stock_status}", $vendor_id);
     }
     
-    /**
-     * آماده‌سازی داده‌های بروزرسانی
-     */
-    private static function prepare_stock_update_data($product_id, $vendor_product, $meta, $vendor_id) {
-        // دریافت مقادیر فعلی مستقیماً از دیتابیس
-        $current_stock = get_post_meta($product_id, '_stock', true);
-        $current_status = get_post_meta($product_id, '_stock_status', true);
-        $current_manage_stock = get_post_meta($product_id, '_manage_stock', true);
-        
-        $new_stock = 0;
-        $new_status = 'outofstock';
-        $new_manage_stock = 'no';
-        $should_update = false;
-        
-        // 🔥 مقدار پیش‌فرض برای stock_type اگر تنظیم نشده
-        $stock_type = isset($meta['stock_type']) ? $meta['stock_type'] : 'status';
-        Vendor_Logger::log_debug("Stock type for vendor {$vendor_id}: {$stock_type}", $product_id, $vendor_id);
-        
-        if ($stock_type === 'managed') {
-            // مدیریت عددی موجودی
-            $new_stock = intval($vendor_product['stock_quantity'] ?? 0);
-            $new_status = ($new_stock > 0) ? 'instock' : 'outofstock';
-            $new_manage_stock = 'yes';
+    foreach ($vendor_products as $vendor_product) {
+        if (!empty($vendor_product['sku'])) {
+            $clean_sku = trim($vendor_product['sku']);
             
-            // بررسی نیاز به بروزرسانی
-            if ($current_stock != $new_stock || $current_status != $new_status || $current_manage_stock != $new_manage_stock) {
-                $should_update = true;
+            if (isset($product_sku_map[$clean_sku])) {
+                $product_id = $product_sku_map[$clean_sku];
+                
+                // 🔥 لاگ اطلاعات محصول محلی
+                $current_stock = get_post_meta($product_id, '_stock', true);
+                $current_status = get_post_meta($product_id, '_stock_status', true);
+                $current_manage = get_post_meta($product_id, '_manage_stock', true);
+                
+                Vendor_Logger::log_info("🏠 Local Product: ID={$product_id}, Current Stock={$current_stock}, Current Status={$current_status}, Manage={$current_manage}", $vendor_id);
+                
+                // 🔥 لاگ اطلاعات محصول فروشنده
+                $vendor_stock_qty = $vendor_product['stock_quantity'] ?? 'NULL';
+                $vendor_stock_status = $vendor_product['stock_status'] ?? 'NULL';
+                
+                Vendor_Logger::log_info("🛒 Vendor Product: SKU={$clean_sku}, Stock Qty={$vendor_stock_qty}, Stock Status={$vendor_stock_status}", $vendor_id);
+                
+                // آماده‌سازی داده‌های بروزرسانی
+                $update_data = self::prepare_stock_update_data($product_id, $vendor_product, $meta, $vendor_id);
+                
+                if ($update_data['should_update']) {
+                    $batch_updates[] = $update_data;
+                    Vendor_Logger::log_info("✅ WILL UPDATE Product {$product_id}", $vendor_id);
+                } else {
+                    Vendor_Logger::log_info("❌ NO UPDATE Product {$product_id} - Values are the same", $vendor_id);
+                }
+            } else {
+                Vendor_Logger::log_warning("🚫 SKU not found in local products: {$clean_sku}", null, $vendor_id);
             }
-            
-            Vendor_Logger::log_debug("Managed stock - Product {$product_id}: {$current_stock} → {$new_stock}, Status: {$current_status} → {$new_status}, Manage: {$current_manage_stock} → {$new_manage_stock}", $product_id, $vendor_id);
-            
-        } else {
-            // مدیریت وضعیتی موجودی
-            $vendor_stock_status = $vendor_product['stock_status'] ?? 'outofstock';
-            $new_status = ($vendor_stock_status === 'instock' || $vendor_stock_status === 'onbackorder') ? 'instock' : 'outofstock';
-            $new_stock = ($new_status === 'instock') ? 1 : 0;
-            $new_manage_stock = 'no';
-            
-            // بررسی نیاز به بروزرسانی
-            if ($current_status != $new_status || $current_manage_stock != $new_manage_stock) {
-                $should_update = true;
-            }
-            
-            Vendor_Logger::log_debug("Status stock - Product {$product_id}: Status {$current_status} → {$new_status}, Vendor status: {$vendor_stock_status}, Manage: {$current_manage_stock} → {$new_manage_stock}", $product_id, $vendor_id);
         }
         
-        return [
-            'product_id' => $product_id,
-            'should_update' => $should_update,
-            'meta_updates' => [
-                '_stock' => $new_stock,
-                '_stock_status' => $new_status,
-                '_manage_stock' => $new_manage_stock
-            ],
-            'log_message' => "Stock: {$current_stock} → {$new_stock}, Status: {$current_status} → {$new_status}, Manage: {$current_manage_stock} → {$new_manage_stock}"
-        ];
+        // اجرای batch
+        if (count($batch_updates) >= 5) {
+            $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
+            $batch_updates = [];
+        }
     }
+    
+    // اجرای باقی‌مانده
+    if (!empty($batch_updates)) {
+        $updated_count += self::execute_fast_batch_updates($batch_updates, $vendor_id);
+    }
+    
+    Vendor_Logger::log_info("🎯 Batch processing completed: {$updated_count} products updated", $vendor_id);
+    
+    return $updated_count;
+}
+    
+/**
+ * آماده‌سازی داده‌های بروزرسانی
+ */
+private static function prepare_stock_update_data($product_id, $vendor_product, $meta, $vendor_id) {
+    // دریافت مقادیر فعلی مستقیماً از دیتابیس
+    $current_stock = get_post_meta($product_id, '_stock', true);
+    $current_status = get_post_meta($product_id, '_stock_status', true);
+    $current_manage_stock = get_post_meta($product_id, '_manage_stock', true);
+    
+    $new_stock = '';
+    $new_status = 'outofstock';
+    $new_manage_stock = 'no';
+    $should_update = false;
+    
+    // 🔥 مقدار پیش‌فرض برای stock_type اگر تنظیم نشده
+    $stock_type = isset($meta['stock_type']) ? $meta['stock_type'] : 'status';
+    
+    if ($stock_type === 'managed') {
+        // مدیریت عددی موجودی
+        $new_stock = intval($vendor_product['stock_quantity'] ?? 0);
+        $new_status = ($new_stock > 0) ? 'instock' : 'outofstock';
+        $new_manage_stock = 'yes';
+        
+    } else {
+        // 🔥 مدیریت وضعیتی موجودی - stock باید خالی باشد
+        $vendor_stock_status = $vendor_product['stock_status'] ?? 'outofstock';
+        $new_status = ($vendor_stock_status === 'instock' || $vendor_stock_status === 'onbackorder') ? 'instock' : 'outofstock';
+        $new_stock = ''; // 🔥 مهم: خالی بگذاریم نه 1
+        $new_manage_stock = 'no';
+    }
+    
+    // بررسی نیاز به بروزرسانی
+    if ($current_stock != $new_stock || $current_status != $new_status || $current_manage_stock != $new_manage_stock) {
+        $should_update = true;
+    }
+    
+    Vendor_Logger::log_debug("Stock update - Product {$product_id}: Stock '{$current_stock}' → '{$new_stock}', Status '{$current_status}' → '{$new_status}', Manage '{$current_manage_stock}' → '{$new_manage_stock}'", $product_id, $vendor_id);
+    
+    return [
+        'product_id' => $product_id,
+        'should_update' => $should_update,
+        'meta_updates' => [
+            '_stock' => $new_stock, // 🔥 برای status خالی می‌شود
+            '_stock_status' => $new_status,
+            '_manage_stock' => $new_manage_stock
+        ],
+        'log_message' => "Stock: '{$current_stock}' → '{$new_stock}', Status: {$current_status} → {$new_status}, Manage: {$current_manage_stock} → {$new_manage_stock}"
+    ];
+}
     
     /**
      * اجرای بروزرسانی‌های سریع
