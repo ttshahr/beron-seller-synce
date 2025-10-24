@@ -81,7 +81,7 @@ class Vendor_Stock_Updater_Optimized {
         
         $results = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
         
-        Vendor_Logger::log_debug("Local products query returned " . count($results) . " results", null, $vendor_id);
+        Vendor_Logger::log_info("Found " . count($results) . " local products for vendor {$vendor_id}" . ($cat_id !== 'all' ? " in category {$cat_id}" : ""), $vendor_id);
         
         return $results;
     }
