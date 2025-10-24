@@ -176,6 +176,228 @@ class Admin_Debug_Logs_Tab {
                 
             </div>
         </div>
+
+        <style>
+            /* بازنویسی استایل کارت برای صفحه لاگ */
+            .vendor-sync-debug-page .card,
+            .log-viewer-container .card,
+            .log-display-section .card,
+            .log-info-section .card,
+            .full-width-card {
+                max-width: none !important;
+                width: 100% !important;
+            }
+
+            .log-display-section .card {
+                margin-top: 0;
+            }
+
+            /* استایل‌های اصلی برای مشاهده لاگ */
+            .log-viewer-container {
+                display: grid;
+                grid-template-columns: 1fr 400px;
+                gap: 20px;
+                align-items: start;
+            }
+
+            .log-display-section .card {
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .log-filters {
+                background: #f9f9f9;
+                padding: 15px;
+                border-radius: 4px;
+                margin-bottom: 15px;
+                border: 1px solid #e1e1e1;
+            }
+
+            /* استایل ترمینال برای نمایش لاگ‌ها */
+            .log-viewer-terminal {
+                background: #1e1e1e;
+                border-radius: 8px;
+                overflow: hidden;
+                border: 1px solid #444;
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .terminal-header {
+                background: #363636;
+                padding: 8px 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                border-bottom: 1px solid #444;
+            }
+
+            .terminal-controls {
+                display: flex;
+                gap: 6px;
+            }
+
+            .terminal-controls .control {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+
+            .terminal-controls .control.close {
+                background: #ff5f56;
+            }
+
+            .terminal-controls .control.minimize {
+                background: #ffbd2e;
+            }
+
+            .terminal-controls .control.maximize {
+                background: #27c93f;
+            }
+
+            .terminal-title {
+                color: #ccc;
+                font-size: 12px;
+                font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            }
+
+            .terminal-body {
+                flex: 1;
+                overflow-y: auto;
+                padding: 0;
+                background: #1e1e1e;
+                max-height: calc(100vh - 400px);
+                min-height: 500px;
+            }
+
+            .log-line-terminal {
+                font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+                padding: 2px 12px;
+                margin: 0;
+                border-bottom: 1px solid #2a2a2a;
+                white-space: pre-wrap;
+                word-break: break-all;
+                transition: background-color 0.1s ease;
+            }
+
+            .log-line-terminal:hover {
+                background-color: #2a2a2a;
+            }
+
+            .log-line-terminal:last-child {
+                border-bottom: none;
+            }
+
+            /* استایل برای لاگ‌های خالی */
+            .no-logs-message {
+                text-align: center;
+                padding: 60px 20px;
+                color: #666;
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                background: #f9f9f9;
+                border-radius: 4px;
+                border: 2px dashed #ddd;
+            }
+
+            .no-logs-icon {
+                font-size: 48px;
+                margin-bottom: 15px;
+                opacity: 0.5;
+            }
+
+            .no-logs-message h3 {
+                margin: 0 0 10px 0;
+                color: #555;
+                font-weight: 500;
+            }
+
+            .no-logs-message p {
+                margin: 0;
+                font-size: 14px;
+            }
+
+            /* اسکرول بار برای ترمینال */
+            .terminal-body::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .terminal-body::-webkit-scrollbar-track {
+                background: #1e1e1e;
+            }
+
+            .terminal-body::-webkit-scrollbar-thumb {
+                background: #555;
+                border-radius: 4px;
+            }
+
+            .terminal-body::-webkit-scrollbar-thumb:hover {
+                background: #777;
+            }
+
+            /* استایل‌های بخش اطلاعات */
+            .log-info-section {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .log-stats {
+                max-height: 300px;
+                overflow-y: auto;
+            }
+
+            .stat-box {
+                border: 1px solid #ddd;
+                padding: 12px;
+                margin-bottom: 8px;
+                border-radius: 4px;
+                background: #fafafa;
+                border-left: 4px solid #0073aa;
+                transition: all 0.3s ease;
+            }
+
+            .stat-box:hover {
+                background: #f0f7ff;
+                transform: translateX(-2px);
+            }
+
+            /* واکنش‌گرایی */
+            @media (max-width: 1200px) {
+                .log-viewer-container {
+                    grid-template-columns: 1fr !important;
+                }
+                
+                .log-info-section {
+                    order: -1;
+                }
+                
+                .terminal-body {
+                    max-height: 400px;
+                }
+            }
+
+            @media (max-width: 768px) {
+                .log-filters form {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                
+                .log-filters form > div {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+            }
+        </style>
         <?php
     }
     
