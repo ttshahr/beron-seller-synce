@@ -13,13 +13,11 @@ class Admin_Debug_Cache_Tab {
         ?>
         
         <div class="cache-cleaner-container">
-            
-            <!-- کارت اصلی پاکسازی کش -->
             <div class="card full-width-card">
                 <h2>🧹 پاکسازی کامل کش سیستم</h2>
                 
                 <?php if (self::$cache_result): ?>
-                    <div class="notice notice-success is-dismissible">
+                    <div class="notice notice-<?php echo strpos(self::$cache_result, '✅') !== false ? 'success' : 'error'; ?> is-dismissible">
                         <p><?php echo esc_html(self::$cache_result); ?></p>
                     </div>
                 <?php endif; ?>
@@ -29,12 +27,13 @@ class Admin_Debug_Cache_Tab {
                         <h3>⚠️ توجه مهم</h3>
                         <p>این عملیات کش‌های زیر را پاکسازی می‌کند:</p>
                         <ul>
-                            <li>✅ کش وردپرس (Object Cache)</li>
+                            <li>✅ کش شیء وردپرس (Object Cache)</li>
                             <li>✅ کش ووکامرس (Product Transients)</li>
                             <li>✅ کش محصولات ویژه و حراج</li>
                             <li>✅ کش افزونه Advanced Bulk Edit</li>
                             <li>✅ کش تمام محصولات و واریانت‌ها</li>
-                            <li>✅ کش جستجو و فیلترها</li>
+                            <li>✅ کش متاهای موجودی و قیمت</li>
+                            <li>✅ کش LiteSpeed (در صورت فعال بودن)</li>
                         </ul>
                         <p><strong>زمان اجرا:</strong> بسته به تعداد محصولات، ممکن است چند ثانیه طول بکشد.</p>
                     </div>
@@ -84,7 +83,6 @@ class Admin_Debug_Cache_Tab {
                     <?php echo self::get_cache_flush_logs(); ?>
                 </div>
             </div>
-            
         </div>
 
         <style>
@@ -233,35 +231,38 @@ class Admin_Debug_Cache_Tab {
         $start_time = microtime(true);
         
         try {
-            // 1. پاکسازی کش وردپرس
-            wp_cache_flush();
-            $steps[] = 'کش وردپرس پاک شد';
+            // 1. پاک‌سازی کش شیء وردپرس
+            if (function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+                $steps[] = 'کش شیء وردپرس پاک شد';
+            }
+
+            // 2. حذف ترنزینت‌های مرتبط
+            $transient_patterns = [
+                '_transient_wc_%',
+                '_transient_timeout_wc_%',
+                '_transient_berocket_%',
+                '_transient_timeout_berocket_%',
+                '_transient_advanced_bulk_edit_%',
+                '_transient_timeout_advanced_bulk_edit_%',
+                '_transient_w3exabe_%',
+                '_transient_timeout_w3exabe_%'
+            ];
             
-            // 2. پاکسازی ترنزینت‌های ووکامرس
-            delete_transient('wc_products_onsale');
-            delete_transient('wc_featured_products');
-            delete_transient('wc_count_comments');
-            $steps[] = 'ترنزینت‌های ووکامرس پاک شدند';
-            
-            // 3. پاکسازی کش ووکامرس
+            foreach ($transient_patterns as $pattern) {
+                $deleted = $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '{$pattern}'");
+                if ($deleted) {
+                    $steps[] = sprintf('ترنزینت‌های %s پاک شدند', $pattern);
+                }
+            }
+
+            // 3. پاک‌سازی کش ووکامرس
             if (function_exists('wc_delete_product_transients')) {
-                do_action('woocommerce_flush_product_transients');
+                wc_delete_product_transients();
                 $steps[] = 'کش محصولات ووکامرس پاک شد';
             }
-            
-            // 4. پاکسازی کش تمام محصولات
-            $product_ids = $wpdb->get_col("SELECT ID FROM {$wpdb->posts} WHERE post_type IN ('product','product_variation')");
-            if ($product_ids) {
-                foreach ($product_ids as $pid) {
-                    if (function_exists('wc_delete_product_transients')) {
-                        wc_delete_product_transients($pid);
-                    }
-                    clean_post_cache($pid);
-                }
-                $steps[] = sprintf('کش %d محصول پاک شد', count($product_ids));
-            }
-            
-            // 5. پاکسازی کش افزونه Advanced Bulk Edit
+
+            // 4. پاکسازی کش افزونه Advanced Bulk Edit
             $table_like = $wpdb->prefix . "abep_%";
             $temp_tables = $wpdb->get_col($wpdb->prepare("SHOW TABLES LIKE %s", $table_like));
             if ($temp_tables) {
@@ -270,34 +271,31 @@ class Admin_Debug_Cache_Tab {
                 }
                 $steps[] = sprintf('کش افزونه Advanced Bulk Edit (%d جدول) پاک شد', count($temp_tables));
             }
-            
-            // 6. بازسازی نسخه ترنزینت محصول
-            if (class_exists('WC_Cache_Helper')) {
-                WC_Cache_Helper::get_transient_version('product', true);
-                $steps[] = 'نسخه کش محصولات بازسازی شد';
+
+            // 5. پاک کردن کش LiteSpeed
+            if (class_exists('LiteSpeed_Cache_API')) {
+                try {
+                    LiteSpeed_Cache_API::purge_all();
+                    $steps[] = 'کش LiteSpeed پاک شد';
+                } catch (Throwable $e) {
+                    $steps[] = 'خطا در پاکسازی کش LiteSpeed';
+                }
+            } elseif (function_exists('do_action')) {
+                do_action('litespeed_purge_all');
+                $steps[] = 'کش LiteSpeed (از طریق action) پاک شد';
             }
-            
-            // 7. پاکسازی کش ترم‌ها و دسته‌ها
-            $taxonomies = ['product_cat', 'product_tag', 'product_brand'];
-            foreach ($taxonomies as $taxonomy) {
-                delete_transient("wc_{$taxonomy}_children");
-            }
-            $steps[] = 'کش دسته‌بندی‌ها پاک شد';
-            
-            // 8. پاکسازی کش جستجو
-            if (function_exists('wc_regenerate_size_attributes_lookup_table')) {
-                delete_transient('wc_attribute_lookup_table_exists');
-            }
-            
+
             $execution_time = round(microtime(true) - $start_time, 2);
             
-            // ثبت در لاگ
-            Vendor_Logger::log_info(sprintf(
-                'Cache flushed successfully - %d steps - %s seconds',
-                count($steps),
-                $execution_time
-            ));
-            
+            // ثبت در لاگ سیستم
+            if (class_exists('Vendor_Logger')) {
+                Vendor_Logger::log_info(sprintf(
+                    'Cache flushed successfully - %d steps - %s seconds',
+                    count($steps),
+                    $execution_time
+                ));
+            }
+
             // ذخیره لاگ پاکسازی
             self::log_cache_flush($steps, $execution_time);
             
@@ -308,7 +306,9 @@ class Admin_Debug_Cache_Tab {
             );
             
         } catch (Exception $e) {
-            Vendor_Logger::log_error('Cache flush failed: ' . $e->getMessage());
+            if (class_exists('Vendor_Logger')) {
+                Vendor_Logger::log_error('Cache flush failed: ' . $e->getMessage());
+            }
             return '❌ خطا در پاکسازی کش: ' . $e->getMessage();
         }
     }
@@ -359,7 +359,7 @@ class Admin_Debug_Cache_Tab {
         
         $logs = get_option('beron_cache_flush_logs', []);
         array_unshift($logs, $log_entry);
-        $logs = array_slice($logs, 0, 10); // فقط 10 لاگ آخر
+        $logs = array_slice($logs, 0, 10);
         
         update_option('beron_cache_flush_logs', $logs);
         update_option('beron_last_cache_flush', current_time('Y-m-d H:i:s'));

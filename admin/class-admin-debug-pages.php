@@ -24,6 +24,9 @@ class Admin_Debug_Pages {
                 <a href="<?php echo add_query_arg(['tab' => 'cache_cleaner']); ?>" class="nav-tab <?php echo $current_tab === 'cache_cleaner' ? 'nav-tab-active' : ''; ?>">
                     پاکسازی کش
                 </a>
+                <a href="<?php echo add_query_arg(['tab' => 'product_debug']); ?>" class="nav-tab <?php echo $current_tab === 'product_debug' ? 'nav-tab-active' : ''; ?>">
+                    🔍 بررسی تک محصول
+                </a>
             </h2>
             
             <?php
@@ -39,6 +42,10 @@ class Admin_Debug_Pages {
                     
                 case 'cache_cleaner':
                     Admin_Debug_Cache_Tab::render();
+                    break;
+                    
+                case 'product_debug':
+                    Admin_Debug_Product_Tab::render(); // 🔥 تب جدید
                     break;
                     
                 default:
@@ -69,6 +76,13 @@ class Admin_Debug_Pages {
             case 'cache_cleaner':
                 if (isset($_POST['flush_cache']) && wp_verify_nonce($_POST['_wpnonce'], 'flush_cache')) {
                     Admin_Debug_Cache_Tab::flush_all_caches();
+                }
+                break;
+                
+            case 'product_debug':
+                // هندلرهای POST برای تب بررسی محصول
+                if (isset($_POST['search_product']) && wp_verify_nonce($_POST['_wpnonce'], 'debug_product_search')) {
+                    // این توسط کلاس Admin_Debug_Product_Tab هندل می‌شود
                 }
                 break;
         }
