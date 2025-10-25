@@ -135,7 +135,7 @@ class Admin_Debug_Vendor_Tab {
         
         // 3. تولید گزارش
         $report = [
-            'basic_stats' => self::get_basic_stats($local_products, $vendor_products, $vendor_id, $vendor_meta),
+            'basic_stats' => self::get_basic_stats($local_products, $vendor_products, $vendor_id),
             'missing_in_local' => self::get_missing_products($vendor_products, $local_products, 'vendor_to_local'),
             'missing_in_vendor' => self::get_missing_products($local_products, $vendor_products, 'local_to_vendor'),
             'price_mismatch' => self::get_price_mismatch_products($local_products, $vendor_products, $vendor_meta),
@@ -199,15 +199,6 @@ class Admin_Debug_Vendor_Tab {
         $page = 1;
         $max_pages = 50; // افزایش محدودیت برای دریافت محصولات بیشتر
         $total_products = 0;
-        $total_pages = 0;
-        
-        // ابتدا اطلاعات اولیه را دریافت کن
-        $connection_info = Vendor_API_Optimizer::test_connection($meta, $vendor_id);
-        if ($connection_info['success'] && isset($connection_info['total_products'])) {
-            $total_products = $connection_info['total_products'];
-            $total_pages = ceil($total_products / 100);
-            Vendor_Logger::log_info("Vendor has {$total_products} products ({$total_pages} pages)", $vendor_id);
-        }
         
         do {
             $products = Vendor_API_Optimizer::get_products_batch($meta, $page, 100, $vendor_id);
@@ -220,17 +211,16 @@ class Admin_Debug_Vendor_Tab {
                         // اگر محصول تکراری است، از جدیدترین استفاده کن
                         if (!isset($all_products[$clean_sku])) {
                             $all_products[$clean_sku] = $product;
+                            $total_products++;
                         }
                     }
                 }
                 
-                $current_total = count($all_products);
-                Vendor_Logger::log_info("Page {$page} - " . count($products) . " products (Total unique: {$current_total})", $vendor_id);
+                Vendor_Logger::log_info("Page {$page} - " . count($products) . " products (Total unique: " . $total_products . ")", $vendor_id);
                 $page++;
                 
                 // اگر تعداد محصولات کمتر از 100 بود، یعنی به آخر رسیده‌ایم
                 if (count($products) < 100) {
-                    Vendor_Logger::log_info("Reached last page (less than 100 products)", $vendor_id);
                     break;
                 }
                 
@@ -238,14 +228,12 @@ class Admin_Debug_Vendor_Tab {
                 usleep(300000); // 0.3 ثانیه
                 
             } else {
-                Vendor_Logger::log_warning("No products returned from page {$page}", $vendor_id);
                 break;
             }
             
         } while ($page <= $max_pages);
         
-        $final_count = count($all_products);
-        Vendor_Logger::log_info("Bulk fetch completed. Total unique products: {$final_count}", $vendor_id);
+        Vendor_Logger::log_info("Bulk fetch completed. Total unique products: " . $total_products, $vendor_id);
         
         return $all_products;
     }
@@ -264,7 +252,7 @@ class Admin_Debug_Vendor_Tab {
     /**
      * آمار پایه - نسخه بهبود یافته
      */
-    private static function get_basic_stats($local_products, $vendor_products, $vendor_id, $vendor_meta) {
+    private static function get_basic_stats($local_products, $vendor_products, $vendor_id) {
         $local_count = count($local_products);
         $vendor_count = is_array($vendor_products) ? count($vendor_products) : 0;
         
@@ -274,33 +262,23 @@ class Admin_Debug_Vendor_Tab {
         
         if (is_array($vendor_products)) {
             foreach ($vendor_products as $vendor_sku => $vendor_product) {
-                $normalized_vendor_sku = self::normalize_sku($vendor_sku);
-                foreach ($local_products as $local_sku => $local_product) {
-                    if (self::normalize_sku($local_sku) === $normalized_vendor_sku) {
-                        $matched_count++;
-                        $matched_skus[] = $vendor_sku;
-                        break;
-                    }
+                if (isset($local_products[$vendor_sku])) {
+                    $matched_count++;
+                    $matched_skus[] = $vendor_sku;
                 }
             }
         }
         
-        // اطلاعات ارز و تنظیمات فروشنده
-        $vendor_currency = $vendor_meta['vendor_currency'] ?? 'toman';
-        $cooperation_price_key = $vendor_meta['vendor_cooperation_price_meta_key'] ?? '';
-        
         // لاگ SKUهای منطبق برای دیباگ
         if (!empty($matched_skus)) {
-            Vendor_Logger::log_info("Matched SKUs sample: " . implode(', ', array_slice($matched_skus, 0, 5)), $vendor_id);
+            Vendor_Logger::log_info("Matched SKUs sample: " . implode(', ', array_slice($matched_skus, 0, 10)), $vendor_id);
         }
         
         return [
             'local_products_count' => $local_count,
             'vendor_products_count' => $vendor_count,
             'matched_products' => $matched_count,
-            'last_sync_time' => self::get_last_sync_time($vendor_id),
-            'vendor_currency' => $vendor_currency,
-            'cooperation_price_key' => $cooperation_price_key
+            'last_sync_time' => self::get_last_sync_time($vendor_id)
         ];
     }
     
@@ -319,21 +297,31 @@ class Admin_Debug_Vendor_Tab {
             
             // نرمال سازی SKU برای مقایسه
             $normalized_sku = self::normalize_sku($sku);
-            $found = false;
             
-            foreach ($target_products as $target_sku => $target_product) {
-                if (self::normalize_sku($target_sku) === $normalized_sku) {
-                    $found = true;
-                    break;
+            if ($direction === 'vendor_to_local') {
+                // محصولات فروشنده که در سایت من نیستند
+                $found = false;
+                foreach ($target_products as $target_sku => $target_product) {
+                    if (self::normalize_sku($target_sku) === $normalized_sku) {
+                        $found = true;
+                        break;
+                    }
                 }
-            }
-            
-            if (!$found) {
-                if ($direction === 'vendor_to_local') {
-                    // محصولات فروشنده که در سایت من نیستند
+                
+                if (!$found) {
                     $missing[] = $sku;
-                } else {
-                    // محصولات سایت من که در فروشنده نیستند
+                }
+            } else {
+                // محصولات سایت من که در فروشنده نیستند
+                $found = false;
+                foreach ($target_products as $target_sku => $target_product) {
+                    if (self::normalize_sku($target_sku) === $normalized_sku) {
+                        $found = true;
+                        break;
+                    }
+                }
+                
+                if (!$found) {
                     $missing[] = [
                         'sku' => $sku,
                         'id' => $product['ID'],
@@ -357,10 +345,9 @@ class Admin_Debug_Vendor_Tab {
         
         if (!is_array($vendor_products)) return ['count' => 0, 'items' => []];
         
-        // دریافت تنظیمات فروشنده
-        $cooperation_price_meta_key = $vendor_meta['vendor_cooperation_price_meta_key'] ?? '';
-        $vendor_currency = $vendor_meta['vendor_currency'] ?? 'toman';
-        $conversion_percent = floatval($vendor_meta['vendor_price_conversion_percent'] ?? 0);
+        // دریافت کلید متای قیمت همکاری از تنظیمات فروشنده
+        $cooperation_price_meta_key = $vendor_meta['price_meta_key'] ?? '';
+        $vendor_currency = $vendor_meta['currency'] ?? 'toman'; // فرض پیش‌فرض: تومان
         
         foreach ($vendor_products as $vendor_sku => $vendor_product) {
             // پیدا کردن محصول محلی منطبق با نرمال سازی SKU
@@ -376,36 +363,39 @@ class Admin_Debug_Vendor_Tab {
             
             if (!$local_product) continue;
             
-            // دریافت قیمت از فروشنده
-            $vendor_price = self::get_vendor_product_price($vendor_product, $cooperation_price_meta_key, $vendor_currency);
+            // 1. اگر کلید متای قیمت همکاری مشخص شده، از آن استفاده کن
+            if (!empty($cooperation_price_meta_key)) {
+                $vendor_cooperation_price = self::get_vendor_cooperation_price($vendor_product, $cooperation_price_meta_key);
+            } 
+            // 2. در غیر این صورت از قیمت عادی استفاده کن
+            else {
+                $vendor_cooperation_price = floatval($vendor_product['price'] ?? 0);
+            }
             
-            // اعمال درصد تبدیل اگر وجود دارد
-            if ($conversion_percent > 0) {
-                $vendor_price = $vendor_price * (1 + ($conversion_percent / 100));
+            // تبدیل قیمت به تومان اگر فروشنده قیمت را به ریال می‌دهد
+            if ($vendor_currency === 'rial' && $vendor_cooperation_price > 0) {
+                $vendor_cooperation_price = $vendor_cooperation_price / 10;
             }
             
             $local_vendor_price = floatval($local_product['vendor_price'] ?? 0);
             
             // فقط اگر هر دو قیمت داشته باشند مقایسه کن
-            if ($vendor_price > 0 && $local_vendor_price > 0) {
+            if ($vendor_cooperation_price > 0 && $local_vendor_price > 0) {
                 // اختلاف بیشتر از 1000 تومان یا 5% (هرکدام بزرگتر است)
-                $absolute_difference = abs($vendor_price - $local_vendor_price);
+                $absolute_difference = abs($vendor_cooperation_price - $local_vendor_price);
                 $percentage_difference = ($absolute_difference / $local_vendor_price) * 100;
                 
-                $threshold = max(1000, $local_vendor_price * 0.05); // 1000 تومان یا 5%
-                
-                if ($absolute_difference > $threshold) {
+                if ($absolute_difference > 1000 || $percentage_difference > 5) {
                     $mismatch[] = [
                         'id' => $local_product['ID'],
                         'sku' => $vendor_sku,
                         'title' => $local_product['post_title'],
-                        'vendor_price' => $vendor_price,
+                        'vendor_price' => $vendor_cooperation_price,
                         'local_price' => $local_vendor_price,
-                        'difference' => $vendor_price - $local_vendor_price,
+                        'difference' => $vendor_cooperation_price - $local_vendor_price,
                         'percentage_diff' => round($percentage_difference, 2),
                         'price_source' => !empty($cooperation_price_meta_key) ? 'cooperation_meta' : 'regular_price',
-                        'vendor_currency' => $vendor_currency,
-                        'conversion_applied' => $conversion_percent > 0
+                        'vendor_currency' => $vendor_currency
                     ];
                 }
             }
@@ -418,50 +408,24 @@ class Admin_Debug_Vendor_Tab {
     }
     
     /**
-     * دریافت قیمت محصول از فروشنده با پشتیبانی از متا فیلدهای مختلف
+     * دریافت قیمت همکاری از محصول فروشنده
      */
-    private static function get_vendor_product_price($vendor_product, $cooperation_price_meta_key, $vendor_currency) {
-        $price = 0;
-        
-        // 1. اولویت با قیمت همکاری از متا فیلد مشخص شده
-        if (!empty($cooperation_price_meta_key)) {
-            $price = self::get_price_from_meta_data($vendor_product, $cooperation_price_meta_key);
-        }
-        
-        // 2. اگر قیمت همکاری پیدا نشد، از قیمت معمولی استفاده کن
-        if ($price <= 0 && isset($vendor_product['price'])) {
-            $price = floatval($vendor_product['price']);
-        }
-        
-        // 3. اگر هنوز قیمتی نداریم، از regular_price استفاده کن
-        if ($price <= 0 && isset($vendor_product['regular_price'])) {
-            $price = floatval($vendor_product['regular_price']);
-        }
-        
-        // 4. تبدیل ارز اگر لازم است
-        if ($price > 0 && $vendor_currency === 'rial') {
-            $price = $price / 10; // تبدیل ریال به تومان
-        }
-        
-        return $price;
-    }
-    
-    /**
-     * دریافت قیمت از متادیتای محصول
-     */
-    private static function get_price_from_meta_data($vendor_product, $meta_key) {
+    private static function get_vendor_cooperation_price($vendor_product, $cooperation_price_meta_key) {
+        // اگر محصول متادیتا دارد، قیمت همکاری را از آن استخراج کن
         if (isset($vendor_product['meta_data']) && is_array($vendor_product['meta_data'])) {
             foreach ($vendor_product['meta_data'] as $meta_item) {
-                if (isset($meta_item['key']) && $meta_item['key'] === $meta_key) {
+                if (isset($meta_item['key']) && $meta_item['key'] === $cooperation_price_meta_key) {
                     return floatval($meta_item['value'] ?? 0);
                 }
             }
         }
-        return 0;
+        
+        // اگر پیدا نشد، از قیمت عادی استفاده کن
+        return floatval($vendor_product['price'] ?? 0);
     }
     
     /**
-     * محصولات با موجودی متفاوت - با نرمال سازی SKU و وضعیت
+     * محصولات با موجودی متفاوت - با نرمال سازی SKU
      */
     private static function get_stock_mismatch_products($local_products, $vendor_products, $vendor_meta) {
         $mismatch = [];
@@ -482,7 +446,7 @@ class Admin_Debug_Vendor_Tab {
             
             if (!$local_product) continue;
             
-            $vendor_stock = self::get_vendor_stock_status($vendor_product, $vendor_meta);
+            $vendor_stock = $vendor_product['stock_status'] ?? 'outofstock';
             $local_stock = $local_product['stock_status'] ?? 'outofstock';
             
             // نرمال سازی وضعیت موجودی
@@ -509,32 +473,16 @@ class Admin_Debug_Vendor_Tab {
     }
     
     /**
-     * دریافت وضعیت موجودی از فروشنده
-     */
-    private static function get_vendor_stock_status($vendor_product, $vendor_meta) {
-        $stock_type = $vendor_meta['vendor_stock_type'] ?? 'status';
-        
-        if ($stock_type === 'managed') {
-            // مدیریت عددی موجودی
-            $stock_quantity = intval($vendor_product['stock_quantity'] ?? 0);
-            return $stock_quantity > 0 ? 'instock' : 'outofstock';
-        } else {
-            // مدیریت وضعیتی موجودی
-            return $vendor_product['stock_status'] ?? 'outofstock';
-        }
-    }
-    
-    /**
      * نرمال سازی وضعیت موجودی
      */
     private static function normalize_stock_status($status) {
         $status = strtolower(trim($status));
         
-        if (in_array($status, ['instock', 'in stock', '1', 'true', 'yes', 'موجود', 'available'])) {
+        if (in_array($status, ['instock', 'in stock', '1', 'true', 'yes', 'موجود'])) {
             return 'instock';
         }
         
-        if (in_array($status, ['outofstock', 'out of stock', '0', 'false', 'no', 'ناموجود', 'unavailable'])) {
+        if (in_array($status, ['outofstock', 'out of stock', '0', 'false', 'no', 'ناموجود'])) {
             return 'outofstock';
         }
         
@@ -613,25 +561,6 @@ class Admin_Debug_Vendor_Tab {
                 <div class="stat-card" style="background: #f3e8ff; padding: 20px; border-radius: 8px; text-align: center;">
                     <div style="font-size: 18px; font-weight: bold; color: #7e22ce;"><?php echo $stats['last_sync_time']; ?></div>
                     <div style="color: #6b7280;">آخرین زمان سینک</div>
-                </div>
-            </div>
-            
-            <!-- اطلاعات اضافی فروشنده -->
-            <div style="margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px;">
-                <h4>⚙️ تنظیمات فروشنده</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px;">
-                    <div>
-                        <strong>واحد پول:</strong> 
-                        <span style="background: #e7f3ff; padding: 2px 8px; border-radius: 4px;">
-                            <?php echo $stats['vendor_currency'] === 'rial' ? 'ریال' : 'تومان'; ?>
-                        </span>
-                    </div>
-                    <div>
-                        <strong>کلید قیمت همکاری:</strong> 
-                        <code style="background: #fef3c7; padding: 2px 6px; border-radius: 4px;">
-                            <?php echo $stats['cooperation_price_key'] ?: 'استاندارد'; ?>
-                        </code>
-                    </div>
                 </div>
             </div>
         </div>
@@ -737,7 +666,7 @@ class Admin_Debug_Vendor_Tab {
                                     <th>قیمت فروشنده</th>
                                     <th>قیمت محلی</th>
                                     <th>اختلاف</th>
-                                    <th>جزئیات</th>
+                                    <th>منبع</th>
                                 <?php else: ?>
                                     <th>موجودی فروشنده</th>
                                     <th>موجودی محلی</th>
@@ -756,24 +685,21 @@ class Admin_Debug_Vendor_Tab {
                                         <td><?php echo number_format($item['local_price']); ?> تومان</td>
                                         <td style="color: <?php echo $item['difference'] > 0 ? '#dc2626' : '#15803d'; ?>">
                                             <?php echo $item['difference'] > 0 ? '+' : ''; ?><?php echo number_format($item['difference']); ?> تومان
-                                            <br><small>(<?php echo $item['percentage_diff']; ?>%)</small>
                                         </td>
                                         <td>
-                                            <small>
-                                                منبع: <?php echo $item['price_source'] === 'cooperation_meta' ? 'متای همکاری' : 'قیمت عادی'; ?><br>
-                                                ارز: <?php echo $item['vendor_currency'] === 'rial' ? 'ریال' : 'تومان'; ?>
-                                                <?php if ($item['conversion_applied']): ?><br>🔧 تبدیل اعمال شده<?php endif; ?>
-                                            </small>
+                                            <span style="font-size: 10px; background: <?php echo $item['price_source'] === 'cooperation_meta' ? '#e7f3ff' : '#f0fdf4'; ?>; padding: 2px 6px; border-radius: 8px;">
+                                                <?php echo $item['price_source'] === 'cooperation_meta' ? 'متای همکاری' : 'قیمت عادی'; ?>
+                                            </span>
                                         </td>
                                     <?php else: ?>
                                         <td>
-                                            <span class="stock-badge <?php echo $item['vendor_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
-                                                <?php echo $item['vendor_stock']; ?>
+                                            <span class="stock-badge <?php echo $item['vendor_stock'] === 'instock' ? 'instock' : 'outofstock'; ?>">
+                                                <?php echo $item['vendor_stock'] === 'instock' ? 'موجود' : 'ناموجود'; ?>
                                             </span>
                                         </td>
                                         <td>
-                                            <span class="stock-badge <?php echo $item['local_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
-                                                <?php echo $item['local_stock']; ?>
+                                            <span class="stock-badge <?php echo $item['local_stock'] === 'instock' ? 'instock' : 'outofstock'; ?>">
+                                                <?php echo $item['local_stock'] === 'instock' ? 'موجود' : 'ناموجود'; ?>
                                             </span>
                                         </td>
                                     <?php endif; ?>
@@ -791,23 +717,6 @@ class Admin_Debug_Vendor_Tab {
                 <p style="color: #28a745; padding: 15px; background: #f0fdf4; border-radius: 4px;">✅ هیچ مغایرتی یافت نشد</p>
             <?php endif; ?>
         </div>
-        
-        <style>
-            .stock-badge {
-                padding: 4px 8px;
-                border-radius: 12px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            .stock-badge.instock {
-                background: #dcfce7;
-                color: #15803d;
-            }
-            .stock-badge.outofstock {
-                background: #fee2e2;
-                color: #dc2626;
-            }
-        </style>
         <?php
         return ob_get_clean();
     }
@@ -828,6 +737,23 @@ class Admin_Debug_Vendor_Tab {
                 </div>
             </div>
         </div>
+        
+        <style>
+            .stock-badge {
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            .stock-badge.instock {
+                background: #dcfce7;
+                color: #15803d;
+            }
+            .stock-badge.outofstock {
+                background: #fee2e2;
+                color: #dc2626;
+            }
+        </style>
         <?php
         return ob_get_clean();
     }
