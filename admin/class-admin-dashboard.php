@@ -14,7 +14,7 @@ class Admin_Dashboard {
         
         // محاسبه مجموع محصولات همه فروشندگان
         foreach ($vendors as $vendor) {
-            $total_vendors_products += Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
+            $total_vendors_products += Vendor_Product_Assigner::get_vendor_real_products_count($vendor->ID);
         }
         ?>
         
@@ -151,7 +151,7 @@ class Admin_Dashboard {
                     </thead>
                     <tbody>
                         <?php foreach ($vendors as $vendor): 
-                            $product_count = Vendor_Product_Assigner::get_vendor_products_count($vendor->ID);
+                            $product_count = Vendor_Product_Assigner::get_vendor_real_products_count($vendor->ID);
                             $raw_price_count = self::count_vendor_products_with_meta($vendor->ID, '_seller_list_price');
                             $final_price_count = self::count_vendor_products_with_meta($vendor->ID, '_vendor_final_price');
                             

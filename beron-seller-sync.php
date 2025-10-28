@@ -29,6 +29,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'BERON_SELLER_SYNC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'BERON_SELLER_SYNC_URL', plugin_dir_url( __FILE__ ) );
 
+// فراخوانی فایل‌های استاتیک برای بخش مدیریت
+function beron_load_assets($hook) {
+    // فقط در صفحات افزونه خودمون بارگذاری بشه
+    if (strpos($hook, 'beron-seller-sync') === false) {
+        return;
+    }
+    
+    // CSS
+    wp_enqueue_style(
+        'beron-progress-css',
+        plugins_url('assets/progress.css', __FILE__)
+    );
+    
+    // JS
+    wp_enqueue_script(
+        'beron-progress-js', 
+        plugins_url('assets/progress.js', __FILE__),
+        array('jquery') // نیاز به jQuery داره
+    );
+    
+    // انتقال داده به JS برای AJAX
+    wp_localize_script('beron-progress-js', 'beron_ajax', array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('beron_nonce')
+    ));
+}
+
+// وصل کردن به وردپرس
+add_action('admin_enqueue_scripts', 'beron_load_assets');
+
 // فایل‌های با اولویت بالا
 $priority_files = [
     'inc/class-vendor-logger.php',

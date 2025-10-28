@@ -245,7 +245,11 @@ class Vendor_Ajax_Handler {
             
             Vendor_Logger::log_debug("Getting assignment status for vendor: {$vendor_id}", $vendor_id);
             
-            $status = Vendor_Product_Assigner::get_assignment_status($vendor_id);
+            // نسخه ساده‌شده از وضعیت اختصاص
+            $status = [
+                'real_products_count' => Vendor_Product_Assigner::get_vendor_real_products_count($vendor_id),
+                'connection' => Vendor_API_Optimizer::test_connection(Vendor_Meta_Handler::get_vendor_meta($vendor_id))
+            ];
             
             wp_send_json_success($status);
             

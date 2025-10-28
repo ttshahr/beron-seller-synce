@@ -4,7 +4,6 @@ if (!defined('ABSPATH')) exit;
 class Vendor_Price_Calculator {
     
     private static $batch_size = 100;
-    private static $memory_cleanup_interval = 50;
     
     /**
      * متد اصلی محاسبه قیمت‌های نهایی
@@ -19,7 +18,7 @@ class Vendor_Price_Calculator {
         wp_defer_term_counting(true);
         
         Vendor_Logger::log_info(
-            "🚀 Starting price calculation for vendor: {$vendor_name} - Percent: {$conversion_percent}%",
+            "شروع محاسبه قیمت برای فروشنده: {$vendor_name} - درصد: {$conversion_percent}%",
             $vendor_id
         );
         
@@ -27,20 +26,25 @@ class Vendor_Price_Calculator {
             $product_ids = self::get_product_ids_with_seller_price($cat_id, $vendor_id);
             
             if (empty($product_ids)) {
-                throw new Exception('هیچ محصولی با قیمت فروشنده برای محاسبه یافت نشد.');
+                Vendor_Logger::log_warning("هیچ محصولی با قیمت فروشنده برای محاسبه یافت نشد", null, $vendor_id);
+                return 0;
             }
             
-            Vendor_Logger::log_info("📦 Found " . count($product_ids) . " products with seller price", $vendor_id);
+            Vendor_Logger::log_debug("پیداشدن " . count($product_ids) . " محصول با قیمت فروشنده", $vendor_id);
             
             // پردازش دسته‌ای
             $result = self::process_calculation_batches($product_ids, $conversion_percent, $vendor_id);
             
-            Vendor_Logger::log_success(
-                0,
-                'price_calculation_completed',
-                $vendor_id,
-                "✅ Price calculation completed: {$result['updated_count']} updated, {$result['error_count']} errors"
-            );
+            if ($result['updated_count'] > 0) {
+                Vendor_Logger::log_success(
+                    0,
+                    'price_calculation_completed',
+                    $vendor_id,
+                    "محاسبه قیمت تکمیل شد: {$result['updated_count']} محصول بروز شد"
+                );
+            } else {
+                Vendor_Logger::log_info("هیچ قیمتی نیاز به بروزرسانی نداشت", $vendor_id);
+            }
             
             return $result['updated_count'];
             
@@ -57,20 +61,17 @@ class Vendor_Price_Calculator {
     private static function process_calculation_batches($product_ids, $conversion_percent, $vendor_id) {
         $total_updated = 0;
         $total_errors = 0;
-        $total_batches = ceil(count($product_ids) / self::$batch_size);
-        
-        Vendor_Logger::log_info("🔄 Processing in {$total_batches} batches", $vendor_id);
         
         foreach (array_chunk($product_ids, self::$batch_size) as $batch_index => $batch) {
-            $batch_number = $batch_index + 1;
-            
-            $batch_result = self::process_single_batch($batch, $conversion_percent, $vendor_id, $batch_number, $total_batches);
+            $batch_result = self::process_single_batch($batch, $conversion_percent, $vendor_id);
             $total_updated += $batch_result['updated_count'];
             $total_errors += $batch_result['error_count'];
             
             // پاکسازی حافظه بعد از هر batch
             self::cleanup_memory();
         }
+        
+        Vendor_Logger::log_debug("پردازش دسته‌ای تکمیل شد: {$total_updated} بروزرسانی, {$total_errors} خطا", $vendor_id);
         
         return [
             'updated_count' => $total_updated,
@@ -81,14 +82,12 @@ class Vendor_Price_Calculator {
     /**
      * پردازش یک batch
      */
-    private static function process_single_batch($product_ids, $conversion_percent, $vendor_id, $batch_number, $total_batches) {
+    private static function process_single_batch($product_ids, $conversion_percent, $vendor_id) {
         $updated_count = 0;
         $error_count = 0;
         $batch_updates = [];
         
-        Vendor_Logger::log_info("🔧 Batch {$batch_number}/{$total_batches}: Processing " . count($product_ids) . " products", $vendor_id);
-        
-        foreach ($product_ids as $index => $product_id) {
+        foreach ($product_ids as $product_id) {
             try {
                 $seller_price = get_post_meta($product_id, '_seller_list_price', true);
                 if (!$seller_price || $seller_price <= 0) {
@@ -116,7 +115,7 @@ class Vendor_Price_Calculator {
             } catch (Exception $e) {
                 $error_count++;
                 Vendor_Logger::log_error(
-                    "Price calculation failed: " . $e->getMessage(),
+                    "خطا در محاسبه قیمت: " . $e->getMessage(),
                     $product_id,
                     $vendor_id
                 );
@@ -128,8 +127,6 @@ class Vendor_Price_Calculator {
             $batch_updated = self::execute_batch_updates($batch_updates, $vendor_id);
             $updated_count += $batch_updated;
         }
-        
-        Vendor_Logger::log_info("✅ Batch {$batch_number}: {$updated_count} updated, {$error_count} errors", $vendor_id);
         
         return [
             'updated_count' => $updated_count,
@@ -156,17 +153,17 @@ class Vendor_Price_Calculator {
                     $updated_count++;
                     update_post_meta($product_id, '_colleague_price_update_time', current_time('mysql'));
                     
-                    Vendor_Logger::log_success(
-                        $product_id,
-                        'price_calculated',
-                        $vendor_id,
-                        "Price calculated: {$seller_price} → {$final_price} (Profit: {$sale_profit})"
-                    );
+                    // Vendor_Logger::log_success(
+                    //     $product_id,
+                    //     'price_calculated',
+                    //     $vendor_id,
+                    //     "قیمت محاسبه شد: {$seller_price} → {$final_price} (سود: {$sale_profit})"
+                    // );
                 }
                 
             } catch (Exception $e) {
                 Vendor_Logger::log_error(
-                    "Price update failed: " . $e->getMessage(),
+                    "خطا در بروزرسانی قیمت: " . $e->getMessage(),
                     $product_id,
                     $vendor_id
                 );
@@ -238,6 +235,6 @@ class Vendor_Price_Calculator {
      */
     private static function get_vendor_name($vendor_id) {
         $vendor = get_userdata($vendor_id);
-        return $vendor ? $vendor->display_name : 'Unknown Vendor';
+        return $vendor ? $vendor->display_name : 'فروشنده ناشناس';
     }
 }
