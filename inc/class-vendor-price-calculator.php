@@ -5,25 +5,27 @@ class Vendor_Price_Calculator {
     
     private static $batch_size = 100;
     
+    
     /**
-     * متد اصلی محاسبه قیمت‌های نهایی
+     * متد اصلی محاسبه قیمت‌های نهایی - نسخه پشتیبانی از چند برند
      */
-    public static function calculate_final_prices($vendor_id, $cat_id, $conversion_percent = 15) {
+    public static function calculate_final_prices($vendor_id, $brand_ids, $conversion_percent = 15) {
         $vendor_name = self::get_vendor_name($vendor_id);
         
-        // تنظیمات بهینه برای حجم بالا
         set_time_limit(600);
         ini_set('memory_limit', '512M');
         wp_suspend_cache_addition(true);
         wp_defer_term_counting(true);
         
+        // لاگ برندهای انتخاب شده
+        $brands_text = empty($brand_ids) ? 'همه برندها' : implode(', ', $brand_ids);
         Vendor_Logger::log_info(
-            "شروع محاسبه قیمت برای فروشنده: {$vendor_name} - درصد: {$conversion_percent}%",
+            "شروع محاسبه قیمت برای فروشنده: {$vendor_name} - درصد: {$conversion_percent}% - برندها: {$brands_text}",
             $vendor_id
         );
         
         try {
-            $product_ids = self::get_product_ids_with_seller_price($cat_id, $vendor_id);
+            $product_ids = self::get_product_ids_with_seller_price($brand_ids, $vendor_id);
             
             if (empty($product_ids)) {
                 Vendor_Logger::log_warning("هیچ محصولی با قیمت فروشنده برای محاسبه یافت نشد", null, $vendor_id);
@@ -32,7 +34,6 @@ class Vendor_Price_Calculator {
             
             Vendor_Logger::log_debug("پیداشدن " . count($product_ids) . " محصول با قیمت فروشنده", $vendor_id);
             
-            // پردازش دسته‌ای
             $result = self::process_calculation_batches($product_ids, $conversion_percent, $vendor_id);
             
             if ($result['updated_count'] > 0) {
@@ -194,9 +195,9 @@ class Vendor_Price_Calculator {
     }
     
     /**
-     * دریافت محصولات دارای قیمت فروشنده
+     * دریافت محصولات دارای قیمت فروشنده - نسخه پشتیبانی از چند برند
      */
-    private static function get_product_ids_with_seller_price($cat_id, $vendor_id) {
+    private static function get_product_ids_with_seller_price($brand_ids, $vendor_id) {
         global $wpdb;
         
         $sql = "SELECT p.ID FROM {$wpdb->posts} p
@@ -209,12 +210,15 @@ class Vendor_Price_Calculator {
         
         $params = [$vendor_id];
         
-        if ($cat_id !== 'all') {
+        // فیلتر بر اساس چند برند
+        if (!empty($brand_ids)) {
+            $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
             $sql .= " AND p.ID IN (
-                SELECT object_id FROM {$wpdb->term_relationships} 
-                WHERE term_taxonomy_id = %d
+                SELECT DISTINCT tr.object_id 
+                FROM {$wpdb->term_relationships} tr 
+                WHERE tr.term_taxonomy_id IN ({$placeholders})
             )";
-            $params[] = intval($cat_id);
+            $params = array_merge($params, $brand_ids);
         }
         
         $sql .= " ORDER BY p.ID ASC";
