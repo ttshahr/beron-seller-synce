@@ -7,7 +7,7 @@ class Admin_Price_Pages {
         ?>
         <div class="wrap">
             <h1>دریافت قیمت‌های خام از فروشنده</h1>
-            <?php //Admin_Common::render_common_stats(); ?>
+            <?php Admin_Common::render_common_stats(); ?>
             <?php self::render_sync_prices_form(); ?>
         </div>
         <?php

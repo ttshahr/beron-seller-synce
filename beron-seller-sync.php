@@ -3,7 +3,7 @@
  * Plugin Name: همگام سازی برون
  * Plugin URI: https://github.com/ttshahr/beron-seller-synce
  * Description: افزونه حرفه‌ای همگام‌سازی محصولات، قیمت‌ها و موجودی با فروشندگان مختلف. قابلیت مدیریت چند فروشنده، پردازش دسته‌ای، لاگ‌گیری پیشرفته و رابط کاربری فارسی.
- * Version: 3.2.0
+ * Version: 3.1.9
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Tested up to: 6.6
@@ -41,6 +41,11 @@ function beron_load_assets($hook) {
         'beron-progress-css',
         plugins_url('assets/progress.css', __FILE__)
     );
+    // در تابع beron_load_assets اضافه کنید:
+    // wp_enqueue_style(
+    //     'beron-admin-price-css',
+    //     plugins_url('assets/admin-price-pages.css', __FILE__)
+    // );
     
     // JS
     wp_enqueue_script(
