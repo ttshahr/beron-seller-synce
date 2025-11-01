@@ -7,7 +7,7 @@ class Price_Sync_Handler {
         add_action('admin_post_sync_vendor_prices', [$this, 'handle_sync_prices_request']);
     }
     
-        public function handle_sync_prices_request() {
+    public function handle_sync_prices_request() {
         if (!current_user_can('manage_woocommerce')) wp_die('دسترسی غیرمجاز');
         
         set_time_limit(600);
@@ -15,10 +15,10 @@ class Price_Sync_Handler {
         wp_suspend_cache_addition(true);
     
         $vendor_id = intval($_POST['vendor_id']);
-        $brand_id = sanitize_text_field($_POST['product_brand']); // تغییر نام متغیر
-    
+        $brand_ids = Vendor_UI_Components::get_selected_brands_from_request('product_brand');
+        
         try {
-            $saved_count = Vendor_Raw_Price_Saver_Optimized::save_raw_prices_optimized($vendor_id, $brand_id); // ارسال brand_id به جای cat_id
+            $saved_count = Vendor_Raw_Price_Saver_Optimized::save_raw_prices_optimized($vendor_id, $brand_ids);
             wp_redirect(admin_url('admin.php?page=vendor-sync-prices&saved=' . $saved_count));
             exit;
         } catch (Exception $e) {

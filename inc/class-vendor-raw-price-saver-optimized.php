@@ -6,20 +6,23 @@ class Vendor_Raw_Price_Saver_Optimized {
     private static $batch_size = 50;
     private static $api_delay = 100000; // 0.1 ثانیه
     
-    public static function save_raw_prices_optimized($vendor_id, $brand_id) {
+    /**
+     * ذخیره قیمت‌های خام از فروشنده - نسخه پشتیبانی از چند برند
+     */
+    public static function save_raw_prices_optimized($vendor_id, $brand_ids = []) {
         $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
         
-        // تنظیمات بهینه‌شده سرعت و حافظه
         set_time_limit(300);
         ini_set('memory_limit', '256M');
         wp_suspend_cache_addition(true);
         wp_defer_term_counting(true);
         
-        Vendor_Logger::log_info("شروع همگام‌سازی قیمت برای فروشنده {$vendor_id} - برند: {$brand_id}", $vendor_id);
+        // لاگ برندهای انتخاب شده
+        $brands_text = empty($brand_ids) ? 'همه برندها' : implode(', ', $brand_ids);
+        Vendor_Logger::log_info("شروع همگام‌سازی قیمت - فروشنده: {$vendor_id}, برندها: {$brands_text}", $vendor_id);
         
         try {
-            // دریافت محصولات محلی
-            $local_products = self::get_local_products_optimized($brand_id, $vendor_id);
+            $local_products = self::get_local_products_optimized($brand_ids, $vendor_id);
             
             if (empty($local_products)) {
                 Vendor_Logger::log_warning("هیچ محصول محلی برای همگام‌سازی قیمت پیدا نشد", null, $vendor_id);
@@ -28,7 +31,6 @@ class Vendor_Raw_Price_Saver_Optimized {
             
             Vendor_Logger::log_debug("پیداشدن " . count($local_products) . " محصول محلی برای پردازش", $vendor_id);
             
-            // پردازش استریمینگ با مدیریت حافظه
             $result = self::process_streaming_updates($meta, $vendor_id, $local_products);
             
             if ($result['saved_count'] > 0) {
@@ -45,7 +47,6 @@ class Vendor_Raw_Price_Saver_Optimized {
             return $result['saved_count'];
             
         } finally {
-            // بازگردانی تنظیمات
             wp_defer_term_counting(false);
             self::cleanup_memory();
         }
@@ -284,32 +285,44 @@ class Vendor_Raw_Price_Saver_Optimized {
     }
     
     /**
-     * دریافت محصولات محلی بهینه‌شده با فیلتر بر اساس برند
+     * دریافت محصولات - نسخه بهینه‌شده برای چند برند
      */
-    private static function get_local_products_optimized($brand_id, $vendor_id) {
+    private static function get_local_products_optimized($brand_ids, $vendor_id) {
         global $wpdb;
         
-        $sql = "SELECT p.ID as id, pm.meta_value as sku 
+        // پایه کوئری مشترک
+        $base_sql = "SELECT p.ID as id, pm.meta_value as sku 
+                    FROM {$wpdb->posts} p 
+                    INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+                    WHERE p.post_type = 'product' 
+                    AND p.post_status = 'publish' 
+                    AND pm.meta_key = '_sku' 
+                    AND pm.meta_value != '' 
+                    AND p.post_author = %d";
+        
+        $params = [$vendor_id];
+        
+        // اگر برندی انتخاب نشده
+        if (empty($brand_ids)) {
+            $sql = $base_sql . " ORDER BY p.ID ASC";
+            return $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        }
+        
+        // اگر برند انتخاب شده - کوئری بهینه‌شده
+        $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
+        $params = array_merge($params, $brand_ids);
+        
+        $sql = "SELECT DISTINCT p.ID as id, pm.meta_value as sku 
                 FROM {$wpdb->posts} p 
                 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+                INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id 
                 WHERE p.post_type = 'product' 
                 AND p.post_status = 'publish' 
                 AND pm.meta_key = '_sku' 
                 AND pm.meta_value != '' 
-                AND p.post_author = %d";
-        
-        $params = [$vendor_id];
-        
-        // فیلتر بر اساس برند
-        if ($brand_id !== 'all') {
-            $sql .= " AND p.ID IN (
-                SELECT object_id FROM {$wpdb->term_relationships} 
-                WHERE term_taxonomy_id = %d
-            )";
-            $params[] = intval($brand_id);
-        }
-        
-        $sql .= " ORDER BY p.ID ASC";
+                AND p.post_author = %d
+                AND tr.term_taxonomy_id IN ({$placeholders})
+                ORDER BY p.ID ASC";
         
         return $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
     }

@@ -15,10 +15,6 @@ class Admin_Price_Pages {
     
     public static function render_sync_prices_form() {
         $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-        $brands = get_terms([
-            'taxonomy' => 'product_brand',
-            'hide_empty' => false
-        ]);
         ?>
         <div class="card">
             <h2>📥 دریافت قیمت‌های خام از فروشنده</h2>
@@ -47,13 +43,12 @@ class Admin_Price_Pages {
                     <tr>
                         <th><label for="product_brand">برند محصولات (اختیاری)</label></th>
                         <td>
-                            <select name="product_brand" id="product_brand" style="min-width: 300px;">
-                                <option value="all">همه برندها</option>
-                                <?php foreach ($brands as $brand): ?>
-                                    <option value="<?php echo $brand->term_id; ?>"><?php echo esc_html($brand->name); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">در صورت انتخاب برند خاص، فقط محصولات آن برند پردازش می‌شوند.</p>
+                            <?php 
+                            Vendor_UI_Components::render_brand_filter([], 'product_brand', [
+                                'placeholder' => 'برندها را انتخاب کنید...'
+                            ]); 
+                            ?>
+                            <p class="description">می‌توانید چند برند انتخاب کنید. در صورت عدم انتخاب، همه برندها پردازش می‌شوند.</p>
                         </td>
                     </tr>
                 </table>
