@@ -7,7 +7,7 @@ class Admin_Stock_Pages {
         ?>
         <div class="wrap">
             <h1>📦 بروزرسانی موجودی از فروشنده</h1>
-            <?php Admin_Common::render_common_stats(); ?>
+            <?php //Admin_Common::render_common_stats(); ?>
             <?php self::render_stocks_form(); ?>
         </div>
         <?php

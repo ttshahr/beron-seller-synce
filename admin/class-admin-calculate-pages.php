@@ -7,7 +7,7 @@ class Admin_Calculate_Pages {
         ?>
         <div class="wrap">
             <h1>محاسبه قیمت‌های نهایی</h1>
-            <?php Admin_Common::render_common_stats(); ?>
+            <?php //Admin_Common::render_common_stats(); ?>
             <?php self::render_calculate_form(); ?>
         </div>
         <?php
