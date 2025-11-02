@@ -115,3 +115,9 @@ foreach ( glob( BERON_SELLER_SYNC_PATH . 'admin/*.php' ) as $file ) {
 foreach ( glob( BERON_SELLER_SYNC_PATH . 'handlers/*.php' ) as $file ) {
     require_once $file;
 }
+
+// در beron-seller-sync.php - بخش activation hook
+register_activation_hook(__FILE__, ['Auto_Sync_Scheduler', 'schedule_auto_sync']);
+
+// اضافه کردن هوک
+add_action('vendor_auto_sync_daily', ['Auto_Sync_Scheduler', 'run_full_sync']);
