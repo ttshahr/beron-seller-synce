@@ -15,7 +15,6 @@ class Admin_Calculate_Pages {
     
     public static function render_calculate_form() {
         $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
         ?>
         
         <div class="card">
@@ -54,20 +53,23 @@ class Admin_Calculate_Pages {
                     </tr>
                     
                     <tr>
-                        <th><label for="calc_product_cat">دسته محصولات (اختیاری)</label></th>
+                        <th><label for="product_brand">برند محصولات (اختیاری)</label></th>
                         <td>
-                            <select name="product_cat" id="calc_product_cat" style="min-width: 300px;">
-                                <option value="all">همه دسته‌ها</option>
-                                <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo $cat->term_id; ?>"><?php echo esc_html($cat->name); ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                            <?php 
+                            Vendor_UI_Components::render_brand_filter([], 'product_brand', [
+                                'placeholder' => 'برندها را انتخاب کنید...'
+                            ]); 
+                            ?>
+                            <p class="description">می‌توانید چند برند انتخاب کنید. در صورت عدم انتخاب، همه برندها پردازش می‌شوند.</p>
                         </td>
                     </tr>
                 </table>
                 
                 <?php submit_button('شروع محاسبه قیمت‌های نهایی', 'primary', 'submit', true); ?>
             </form>
+        </div>
+        <div>
+            <?php Modal_Activity_Status::render_recent('price_calc', $vendor_id, 6); ?>
         </div>
         <?php
     }

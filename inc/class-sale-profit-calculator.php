@@ -455,6 +455,11 @@ class Sale_Profit_Calculator {
     }
 
     private function render_recent_logs() {
+        
+        // حالت جدید با مودال:
+        Modal_Activity_Status::render_recent('profit_calc', null, 8);
+        
+        /*
         $recent_logs = Vendor_Logger::get_recent_logs('general', 10);
         $profit_logs = [];
         
@@ -477,6 +482,7 @@ class Sale_Profit_Calculator {
             echo '<div class="profit-log-entry ' . $log_class . '">' . esc_html($log) . '</div>';
         }
         echo '</div>';
+        */
     }
 }
 

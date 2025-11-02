@@ -56,6 +56,12 @@ class Admin_Price_Pages {
                 <?php submit_button('شروع دریافت قیمت‌های خام', 'primary', 'submit', true); ?>
             </form>
         </div>
+        <div>
+            <?php 
+            // نمایش آخرین فعالیت‌های همگام‌سازی قیمت
+            Modal_Activity_Status::render_recent('price_sync', null, 6);
+            ?>
+        </div>
         <?php
     }
 }

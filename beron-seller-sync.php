@@ -79,6 +79,15 @@ foreach ( $priority_files as $file ) {
     }
 }
 
+// بارگذاری کلی همه فایل‌های پوشه modules
+foreach ( glob( BERON_SELLER_SYNC_PATH . 'modules/*.php' ) as $file ) {
+    $filename = basename( $file );
+    if ( in_array( 'modules/' . $filename, $priority_files ) ) {
+        continue; // اگر قبلاً بارگذاری شده، ردش کن
+    }
+    require_once $file;
+}
+
 // بارگذاری کلی همه فایل‌های پوشه meta
 foreach ( glob( BERON_SELLER_SYNC_PATH . 'meta/*.php' ) as $file ) {
     $filename = basename( $file );

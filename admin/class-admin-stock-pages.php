@@ -71,6 +71,12 @@ class Admin_Stock_Pages {
                 <?php submit_button('🚀 شروع بروزرسانی موجودی', 'primary large', 'submit', true); ?>
             </form>
         </div>
+        <div>
+            <?php 
+            // نمایش آخرین فعالیت‌های بروزرسانی موجودی
+            Modal_Activity_Status::render_recent('stock_sync', null, 6);
+            ?>
+        </div>
         
         <style>
         .stock-info-box ul {
