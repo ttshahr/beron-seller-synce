@@ -3,33 +3,21 @@ if (!defined('ABSPATH')) exit;
 
 class Admin_Stock_Pages {
     
-    public static function render_stocks_page() {
-        ?>
+    public static function render_stocks_page() { ?>
+    
         <div class="wrap">
             <h1>📦 بروزرسانی موجودی از فروشنده</h1>
             <?php Admin_Common::render_common_stats(); ?>
             <?php self::render_stocks_form(); ?>
-        </div>
-        <?php
+        </div> <?php
+        
     }
     
     public static function render_stocks_form() {
         $vendors = get_users(['role__in' => ['hamkar', 'seller']]);
-        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
         
         // دریافت مقادیر قبلی از POST یا GET
         $selected_vendor = isset($_POST['vendor_id']) ? intval($_POST['vendor_id']) : (isset($_GET['vendor_id']) ? intval($_GET['vendor_id']) : 0);
-        $selected_category = isset($_POST['product_cat']) ? sanitize_text_field($_POST['product_cat']) : (isset($_GET['product_cat']) ? sanitize_text_field($_GET['product_cat']) : 'all');
-        
-        // نمایش پیام‌های نتیجه
-        if (isset($_GET['updated'])) {
-            $updated_count = intval($_GET['updated']);
-            echo '<div class="notice notice-success is-dismissible"><p>✅ ' . $updated_count . ' محصول با موفقیت بروزرسانی شدند.</p></div>';
-        }
-        
-        if (isset($_GET['error'])) {
-            echo '<div class="notice notice-error is-dismissible"><p>❌ خطا در بروزرسانی موجودی. لطفا لاگ‌ها را بررسی کنید.</p></div>';
-        }
         ?>
         
         <div class="card">
@@ -58,19 +46,14 @@ class Admin_Stock_Pages {
                         </td>
                     </tr>
                     <tr>
-                        <th><label for="stock_product_cat">دسته محصولات (اختیاری)</label></th>
+                        <th><label for="product_brand">برند محصولات (اختیاری)</label></th>
                         <td>
-                            <select name="product_cat" id="stock_product_cat" style="min-width: 300px;">
-                                <option value="all">همه دسته‌ها</option>
-                                <?php foreach ($categories as $cat): 
-                                    $selected = ($selected_category == $cat->term_id) ? 'selected' : '';
-                                ?>
-                                    <option value="<?php echo $cat->term_id; ?>" <?php echo $selected; ?>>
-                                        <?php echo esc_html($cat->name); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">در صورت انتخاب دسته خاص، فقط محصولات آن دسته بروزرسانی می‌شوند.</p>
+                            <?php 
+                            Vendor_UI_Components::render_brand_filter([], 'product_brand', [
+                                'placeholder' => 'برندها را انتخاب کنید...'
+                            ]); 
+                            ?>
+                            <p class="description">می‌توانید چند برند انتخاب کنید. در صورت عدم انتخاب، همه برندها پردازش می‌شوند.</p>
                         </td>
                     </tr>
                 </table>

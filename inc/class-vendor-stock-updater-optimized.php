@@ -6,28 +6,32 @@ class Vendor_Stock_Updater_Optimized {
     private static $batch_size = 30;
     private static $api_delay = 100000;
     
-    public static function update_stocks($vendor_id, $cat_id) {
+    /**
+     * متد اصلی بروزرسانی موجودی - نسخه پشتیبانی از چند برند
+     */
+    public static function update_stocks($vendor_id, $brand_ids) {
         $start_time = microtime(true);
         
         try {
             $meta = Vendor_Meta_Handler::get_vendor_meta($vendor_id);
             
-            // تنظیمات بهینه‌سازی
             set_time_limit(600);
             ini_set('memory_limit', '512M');
             wp_suspend_cache_addition(true);
             wp_defer_term_counting(true);
             
-            Vendor_Logger::log_info("🚀 شروع بروزرسانی موجودی برای فروشنده {$vendor_id}", $vendor_id);
+            // لاگ برندهای انتخاب شده
+            $brands_text = empty($brand_ids) ? 'همه برندها' : implode(', ', $brand_ids);
+            Vendor_Logger::log_info("🚀 شروع بروزرسانی موجودی برای فروشنده {$vendor_id} - برندها: {$brands_text}", $vendor_id);
             
             // دریافت محصولات محلی بر اساس نویسنده
-            $local_products = self::get_local_products_by_author($vendor_id, $cat_id);
+            $local_products = self::get_local_products_by_author($vendor_id, $brand_ids);
             
             if (empty($local_products)) {
                 throw new Exception('هیچ محصولی برای این فروشنده یافت نشد.');
             }
             
-            Vendor_Logger::log_info("📦 تعداد {$local_products} محصول محلی برای فروشنده {$vendor_id} پیدا شد", $vendor_id);
+            Vendor_Logger::log_info("📦 تعداد " . count($local_products) . " محصول محلی برای فروشنده {$vendor_id} پیدا شد", $vendor_id);
             
             // پردازش با Bulk API
             $result = self::process_with_bulk_api($meta, $vendor_id, $local_products);
@@ -51,16 +55,15 @@ class Vendor_Stock_Updater_Optimized {
             Vendor_Logger::log_error("بروزرسانی موجودی شکست خورد: " . $e->getMessage(), null, $vendor_id);
             throw $e;
         } finally {
-            // بازگردانی تنظیمات
             wp_defer_term_counting(false);
             self::cleanup_memory();
         }
     }
     
     /**
-     * دریافت محصولات بر اساس نویسنده
+     * دریافت محصولات بر اساس نویسنده - نسخه پشتیبانی از چند برند
      */
-    private static function get_local_products_by_author($vendor_id, $cat_id) {
+    private static function get_local_products_by_author($vendor_id, $brand_ids) {
         global $wpdb;
         
         $sql = "SELECT p.ID, pm.meta_value as sku 
@@ -74,19 +77,23 @@ class Vendor_Stock_Updater_Optimized {
         
         $params = [$vendor_id];
         
-        if ($cat_id !== 'all') {
+        // فیلتر بر اساس چند برند
+        if (!empty($brand_ids)) {
+            $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
             $sql .= " AND p.ID IN (
-                SELECT object_id FROM {$wpdb->term_relationships} 
-                WHERE term_taxonomy_id = %d
+                SELECT DISTINCT tr.object_id 
+                FROM {$wpdb->term_relationships} tr 
+                WHERE tr.term_taxonomy_id IN ({$placeholders})
             )";
-            $params[] = intval($cat_id);
+            $params = array_merge($params, $brand_ids);
         }
         
         $sql .= " ORDER BY p.ID ASC";
         
         $results = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
         
-        Vendor_Logger::log_debug("پیداشدن {$results} محصول محلی برای فروشنده {$vendor_id}" . ($cat_id !== 'all' ? " در دسته‌بندی {$cat_id}" : ""), $vendor_id);
+        $brands_text = empty($brand_ids) ? 'همه برندها' : implode(', ', $brand_ids);
+        Vendor_Logger::log_debug("پیداشدن " . count($results) . " محصول محلی برای فروشنده {$vendor_id} - برندها: {$brands_text}", $vendor_id);
         
         return $results;
     }

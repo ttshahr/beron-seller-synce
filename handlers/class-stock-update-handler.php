@@ -15,10 +15,10 @@ class Stock_Update_Handler {
         wp_suspend_cache_addition(true);
 
         $vendor_id = intval($_POST['vendor_id']);
-        $cat_id = sanitize_text_field($_POST['product_cat']);
+        $brand_ids = Vendor_UI_Components::get_selected_brands_from_request('product_brand');
 
         try {
-            $updated_count = Vendor_Stock_Updater_Optimized::update_stocks($vendor_id, $cat_id);
+            $updated_count = Vendor_Stock_Updater_Optimized::update_stocks($vendor_id, $brand_ids);
             wp_redirect(admin_url('admin.php?page=vendor-sync-stocks&updated=' . $updated_count));
             exit;
         } catch (Exception $e) {
