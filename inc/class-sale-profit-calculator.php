@@ -8,11 +8,11 @@ class Sale_Profit_Calculator {
     public function __construct() {
         add_action('wp_ajax_calculate_sale_profit', [$this, 'calculate_profit_ajax']);
         add_action('wp_ajax_get_profit_progress', [$this, 'get_progress_ajax']);
-        // Vendor_Logger::log_info('Sale Profit Calculator initialized');
     }
 
     public function render_page() {
-        $categories = get_terms(['taxonomy' => 'product_cat', 'hide_empty' => false]);
+        // فراخوانی استایل‌های Select2
+        self::enqueue_select2_styles();
         ?>
         <div class="wrap">
             <h1>محاسبه سود فروش محصولات</h1>
@@ -21,13 +21,14 @@ class Sale_Profit_Calculator {
             <form id="profit-form">
                 <table class="form-table">
                     <tr>
-                        <th>انتخاب دسته‌ها</th>
+                        <th>انتخاب برندها</th>
                         <td>
-                            <select name="categories[]" multiple style="width:300px; height:150px;">
-                                <?php foreach($categories as $cat): ?>
-                                    <option value="<?php echo esc_attr($cat->term_id); ?>"><?php echo esc_html($cat->name); ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                            <?php 
+                            Vendor_UI_Components::render_brand_filter([], 'product_brand', [
+                                'placeholder' => 'برندها را انتخاب کنید...'
+                            ]); 
+                            ?>
+                            <p class="description">می‌توانید چند برند انتخاب کنید. در صورت عدم انتخاب، همه برندها پردازش می‌شوند.</p>
                         </td>
                     </tr>
                 </table>
@@ -126,13 +127,14 @@ class Sale_Profit_Calculator {
             }
 
             $('#start-calc').click(function(){
-                var selected = $('select[name="categories[]"]').val();
-                if(!selected || selected.length===0){
-                    alert('حداقل یک دسته انتخاب کنید.');
+                var selectedBrands = $('select[name="product_brand[]"]').val();
+                
+                if(!selectedBrands || selectedBrands.length===0){
+                    alert('حداقل یک برند انتخاب کنید.');
                     return;
                 }
 
-                if(selected.length > 5 && !confirm('⚠️ شما ' + selected.length + ' دسته انتخاب کرده‌اید. ادامه می‌دهید؟')) {
+                if(selectedBrands.length > 5 && !confirm('⚠️ شما ' + selectedBrands.length + ' برند انتخاب کرده‌اید. ادامه می‌دهید؟')) {
                     return;
                 }
 
@@ -150,14 +152,14 @@ class Sale_Profit_Calculator {
                 currentJobId = jobId;
 
                 // شروع پردازش
-                processBatch(jobId, selected, 0);
+                processBatch(jobId, selectedBrands, 0);
             });
 
-            function processBatch(jobId, categories, offset) {
+            function processBatch(jobId, brandIds, offset) {
                 $.post(ajaxurl, {
                     action: 'calculate_sale_profit',
                     job_id: jobId,
-                    categories: categories,
+                    brand_ids: brandIds,
                     offset: offset,
                     batch_size: <?php echo self::$batch_size; ?>,
                     _wpnonce: '<?php echo wp_create_nonce("calculate_profit_nonce"); ?>'
@@ -177,7 +179,7 @@ class Sale_Profit_Calculator {
                         // اگر batch بعدی وجود دارد
                         if(data.has_more) {
                             setTimeout(function() {
-                                processBatch(jobId, categories, data.next_offset);
+                                processBatch(jobId, brandIds, data.next_offset);
                             }, 100);
                         } else {
                             // کار تمام شد
@@ -217,8 +219,48 @@ class Sale_Profit_Calculator {
         .profit-log-error { background: #fef2f2; border-left: 4px solid #ef4444; }
         .profit-log-info { background: #f0f9ff; border-left: 4px solid #0ea5e9; }
         #progress-bar { transition: width 0.5s ease-in-out; }
+        
+        /* استایل‌های Select2 */
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice {
+            margin-left: 5px;
+            margin-right: auto;
+            color: green;
+            background: #f2fff2;
+            border: 1px solid green;
+            padding: 5px 17px;
+        }
+        
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice__remove {
+            margin-left: 2px;
+            margin-right: auto;
+            color: red;
+        }
         </style>
         <?php
+    }
+
+    /**
+     * فراخوانی استایل‌های Select2
+     */
+    private static function enqueue_select2_styles() {
+        echo '
+        <style>
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice {
+            margin-left: 5px;
+            margin-right: auto;
+            color: green;
+            background: #f2fff2;
+            border: 1px solid green;
+            padding: 5px 17px;
+        }
+        
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice__remove {
+            margin-left: 2px;
+            margin-right: auto;
+            color: red;
+        }
+        </style>
+        ';
     }
 
     /**
@@ -234,14 +276,10 @@ class Sale_Profit_Calculator {
                 throw new Exception('دسترسی غیرمجاز');
             }
 
-            $categories = isset($_POST['categories']) ? array_map('intval', $_POST['categories']) : [];
+            $brand_ids = isset($_POST['brand_ids']) ? array_map('intval', $_POST['brand_ids']) : [];
             $job_id = sanitize_text_field($_POST['job_id']);
             $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
             $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : self::$batch_size;
-            
-            if(empty($categories)){
-                throw new Exception('هیچ دسته‌ای انتخاب نشده است.');
-            }
 
             // ✅ تنظیمات بهینه
             set_time_limit(300);
@@ -250,14 +288,15 @@ class Sale_Profit_Calculator {
 
             // اگر اولین batch است، محصولات را بگیر
             if ($offset === 0) {
-                $all_product_ids = $this->get_product_ids_optimized($categories);
+                $all_product_ids = $this->get_product_ids_by_brands($brand_ids);
                 $total_products = count($all_product_ids);
                 
                 // ذخیره در transient برای batchهای بعدی
                 set_transient('profit_calc_' . $job_id, $all_product_ids, HOUR_IN_SECONDS);
                 set_transient('profit_calc_total_' . $job_id, $total_products, HOUR_IN_SECONDS);
                 
-                Vendor_Logger::log_info("Starting profit calculation for {$total_products} products, job: {$job_id}");
+                $brands_text = empty($brand_ids) ? 'همه برندها' : implode(', ', $brand_ids);
+                Vendor_Logger::log_info("Starting profit calculation for {$total_products} products, brands: {$brands_text}, job: {$job_id}");
             } else {
                 // دریافت از transient
                 $all_product_ids = get_transient('profit_calc_' . $job_id);
@@ -269,7 +308,7 @@ class Sale_Profit_Calculator {
             }
 
             if ($total_products === 0) {
-                throw new Exception('هیچ محصولی در دسته‌های انتخاب شده یافت نشد.');
+                throw new Exception('هیچ محصولی در برندهای انتخاب شده یافت نشد.');
             }
 
             // محاسبه batch فعلی
@@ -305,7 +344,7 @@ class Sale_Profit_Calculator {
                 'message' => $has_more ? 'در حال محاسبه سود...' : 'محاسبه کامل شد',
                 'details' => $has_more ? 
                     "دسته " . (floor($offset/$batch_size) + 1) . " در حال پردازش" : 
-                    "${batch_result['total_success']} محصول بروزرسانی شدند",
+                    "{$batch_result['total_success']} محصول بروزرسانی شدند",
                 'current' => $processed_so_far,
                 'total' => $total_products,
                 'has_more' => $has_more,
@@ -343,17 +382,35 @@ class Sale_Profit_Calculator {
         ]);
     }
 
-    private function get_product_ids_optimized($category_ids) {
+    /**
+     * دریافت محصولات بر اساس برندها
+     */
+    private function get_product_ids_by_brands($brand_ids) {
         global $wpdb;
-        $category_placeholders = implode(',', array_fill(0, count($category_ids), '%d'));
-        $sql = $wpdb->prepare("
-            SELECT DISTINCT p.ID FROM {$wpdb->posts} p 
-            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id 
-            WHERE p.post_type = 'product' AND p.post_status = 'publish' 
-            AND tr.term_taxonomy_id IN ($category_placeholders)
-            ORDER BY p.ID ASC
-        ", $category_ids);
-        return $wpdb->get_col($sql);
+        
+        $sql = "SELECT DISTINCT p.ID FROM {$wpdb->posts} p 
+                WHERE p.post_type = 'product' AND p.post_status = 'publish'";
+        
+        $params = [];
+        
+        // فیلتر بر اساس چند برند
+        if (!empty($brand_ids)) {
+            $placeholders = implode(',', array_fill(0, count($brand_ids), '%d'));
+            $sql .= " AND p.ID IN (
+                SELECT DISTINCT tr.object_id 
+                FROM {$wpdb->term_relationships} tr 
+                WHERE tr.term_taxonomy_id IN ({$placeholders})
+            )";
+            $params = $brand_ids;
+        }
+        
+        $sql .= " ORDER BY p.ID ASC";
+        
+        if (!empty($params)) {
+            return $wpdb->get_col($wpdb->prepare($sql, $params));
+        } else {
+            return $wpdb->get_col($sql);
+        }
     }
 
     private function process_batch($product_ids) {
@@ -398,6 +455,11 @@ class Sale_Profit_Calculator {
     }
 
     private function render_recent_logs() {
+        
+        // حالت جدید با مودال:
+        Modal_Activity_Status::render_recent('profit_calc', null, 8);
+        
+        /*
         $recent_logs = Vendor_Logger::get_recent_logs('general', 10);
         $profit_logs = [];
         
@@ -420,6 +482,7 @@ class Sale_Profit_Calculator {
             echo '<div class="profit-log-entry ' . $log_class . '">' . esc_html($log) . '</div>';
         }
         echo '</div>';
+        */
     }
 }
 

@@ -98,6 +98,39 @@ class Vendor_UI_Components {
         .select2-container--default .select2-results__option--highlighted[aria-selected] {
             background-color: #0073aa;
         }
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice {
+            margin-left: 5px;
+            margin-right: auto;
+            color: green;
+            background: #f2fff2;
+            border: 1px solid green;
+            padding: 5px 17px;
+        }
+        
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice__remove {
+            margin-left: 2px;
+            margin-right: auto;
+            color: red;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__clear {
+            cursor: pointer;
+            float: left !important;
+            font-weight: bold;
+            margin: 5px !important;
+            padding: 5px;
+            background: red;
+            border-radius: 25%;
+            width: 10px;
+            height: 10px;
+            color: white;
+            position: relative;
+            top: 8px;
+            text-align: center;
+            line-height: 8px;
+        }
+        .select2-container--default[dir="rtl"] .select2-selection--multiple .select2-selection__choice {
+            margin: 7px;
+        }
         </style>
         <?php
     }

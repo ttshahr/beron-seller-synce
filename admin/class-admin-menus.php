@@ -46,6 +46,15 @@ class Admin_Menus {
             'vendor-sync-stocks',
             ['Admin_Pages', 'render_stocks_page']
         );
+
+        add_submenu_page(
+            'vendor-sync',
+            'محاسبه سود فروش',
+            'محاسبه سود فروش',
+            'manage_woocommerce',
+            'vendor-sync-profit',
+            ['Admin_Pages', 'render_profit_page'] // این متد باید در Admin_Pages تعریف شود
+        );
         
         add_submenu_page(
             'vendor-sync',
@@ -56,14 +65,7 @@ class Admin_Menus {
             ['Admin_Pages', 'render_debug_page']
         );
         
-        add_submenu_page(
-            'vendor-sync',
-            'محاسبه سود فروش',
-            'محاسبه سود فروش',
-            'manage_woocommerce',
-            'vendor-sync-profit',
-            ['Admin_Pages', 'render_profit_page'] // این متد باید در Admin_Pages تعریف شود
-        );
+        
     }
 }
 

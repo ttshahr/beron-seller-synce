@@ -68,6 +68,9 @@ class Admin_Calculate_Pages {
                 <?php submit_button('شروع محاسبه قیمت‌های نهایی', 'primary', 'submit', true); ?>
             </form>
         </div>
+        <div>
+            <?php Modal_Activity_Status::render_recent('price_calc', $vendor_id, 6); ?>
+        </div>
         <?php
     }
 }
