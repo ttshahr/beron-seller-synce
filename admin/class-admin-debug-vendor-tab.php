@@ -149,45 +149,50 @@ class Admin_Debug_Vendor_Tab {
     /**
      * دریافت محصولات محلی
      */
+    /**
+     * دریافت محصولات محلی - نسخه اصلاح شده برای دریافت قیمت فروشنده
+     */
     private static function get_local_products($vendor_id) {
-        global $wpdb;
-        
-        $products = $wpdb->get_results($wpdb->prepare("
-            SELECT 
-                p.ID,
-                p.post_title,
-                pm_sku.meta_value as sku,
-                pm_price.meta_value as price,
-                pm_stock.meta_value as stock,
-                pm_stock_status.meta_value as stock_status,
-                pm_vendor_price.meta_value as vendor_price,
-                pm_last_sync.meta_value as last_sync
-            FROM {$wpdb->posts} p
-            LEFT JOIN {$wpdb->postmeta} pm_sku ON p.ID = pm_sku.post_id AND pm_sku.meta_key = '_sku'
-            LEFT JOIN {$wpdb->postmeta} pm_price ON p.ID = pm_price.post_id AND pm_price.meta_key = '_price'
-            LEFT JOIN {$wpdb->postmeta} pm_stock ON p.ID = pm_stock.post_id AND pm_stock.meta_key = '_stock'
-            LEFT JOIN {$wpdb->postmeta} pm_stock_status ON p.ID = pm_stock_status.post_id AND pm_stock_status.meta_key = '_stock_status'
-            LEFT JOIN {$wpdb->postmeta} pm_vendor_price ON p.ID = pm_vendor_price.post_id AND pm_vendor_price.meta_key = '_seller_list_price'
-            LEFT JOIN {$wpdb->postmeta} pm_last_sync ON p.ID = pm_last_sync.post_id AND pm_last_sync.meta_key = '_vendor_stock_last_sync'
-            WHERE p.post_type = 'product'
-            AND p.post_status = 'publish'
-            AND p.post_author = %d
-            AND pm_sku.meta_value IS NOT NULL
-            AND pm_sku.meta_value != ''
-        ", $vendor_id), ARRAY_A);
-        
-        $formatted_products = [];
-        foreach ($products as $product) {
-            if (!empty($product['sku'])) {
-                $clean_sku = self::normalize_sku(trim($product['sku']));
-                $formatted_products[$clean_sku] = $product;
-            }
+    global $wpdb;
+    
+    $products = $wpdb->get_results($wpdb->prepare("
+        SELECT 
+            p.ID,
+            p.post_title,
+            pm_sku.meta_value as sku,
+            pm_price.meta_value as price,
+            pm_regular_price.meta_value as regular_price,
+            pm_stock.meta_value as stock,
+            pm_stock_status.meta_value as stock_status,
+            pm_vendor_price.meta_value as vendor_price, -- این همان _seller_list_price است
+            pm_last_sync.meta_value as last_sync
+        FROM {$wpdb->posts} p
+        LEFT JOIN {$wpdb->postmeta} pm_sku ON p.ID = pm_sku.post_id AND pm_sku.meta_key = '_sku'
+        LEFT JOIN {$wpdb->postmeta} pm_price ON p.ID = pm_price.post_id AND pm_price.meta_key = '_price'
+        LEFT JOIN {$wpdb->postmeta} pm_regular_price ON p.ID = pm_regular_price.post_id AND pm_regular_price.meta_key = '_regular_price'
+        LEFT JOIN {$wpdb->postmeta} pm_stock ON p.ID = pm_stock.post_id AND pm_stock.meta_key = '_stock'
+        LEFT JOIN {$wpdb->postmeta} pm_stock_status ON p.ID = pm_stock_status.post_id AND pm_stock_status.meta_key = '_stock_status'
+        LEFT JOIN {$wpdb->postmeta} pm_vendor_price ON p.ID = pm_vendor_price.post_id AND pm_vendor_price.meta_key = '_seller_list_price' -- کلید صحیح
+        LEFT JOIN {$wpdb->postmeta} pm_last_sync ON p.ID = pm_last_sync.post_id AND pm_last_sync.meta_key = '_vendor_stock_last_sync'
+        WHERE p.post_type = 'product'
+        AND p.post_status = 'publish'
+        AND p.post_author = %d
+        AND pm_sku.meta_value IS NOT NULL
+        AND pm_sku.meta_value != ''
+    ", $vendor_id), ARRAY_A);
+    
+    $formatted_products = [];
+    foreach ($products as $product) {
+        if (!empty($product['sku'])) {
+            $clean_sku = self::normalize_sku(trim($product['sku']));
+            $formatted_products[$clean_sku] = $product;
         }
-        
-        Vendor_Logger::log_info("Found " . count($formatted_products) . " local products for vendor {$vendor_id}", $vendor_id);
-        
-        return $formatted_products;
     }
+    
+    Vendor_Logger::log_info("Found " . count($formatted_products) . " local products for vendor {$vendor_id}", $vendor_id);
+    
+    return $formatted_products;
+}
     
     /**
      * دریافت محصولات فروشنده با Bulk API - نسخه بهبود یافته
@@ -350,71 +355,123 @@ class Admin_Debug_Vendor_Tab {
     }
     
     /**
-     * محصولات با قیمت متفاوت - نسخه بهبود یافته با پشتیبانی از ریال/تومان
+     * محصولات با قیمت متفاوت - نسخه اصلاح شده با تبدیل ارز صحیح
+     */
+    /**
+     * محصولات با قیمت متفاوت - نسخه اصلاح شده برای مقایسه با قیمت فروشنده
+     */
+    /**
+     * محصولات با قیمت متفاوت - نسخه نهایی برای مقایسه قیمت همکاری
      */
     private static function get_price_mismatch_products($local_products, $vendor_products, $vendor_meta) {
-        $mismatch = [];
+    $mismatch = [];
+    
+    if (!is_array($vendor_products)) return ['count' => 0, 'items' => []];
+    
+    // دریافت تنظیمات فروشنده از متای کاربر
+    $cooperation_price_meta_key = $vendor_meta['vendor_cooperation_price_meta_key'] ?? '';
+    $vendor_currency = $vendor_meta['vendor_currency'] ?? 'toman';
+    
+    // اگر کلید متای قیمت همکاری مشخص نیست، گزارش نده
+    if (empty($cooperation_price_meta_key)) {
+        return ['count' => 0, 'items' => []];
+    }
+    
+    foreach ($vendor_products as $vendor_sku => $vendor_product) {
+        // پیدا کردن محصول محلی منطبق با نرمال سازی SKU
+        $local_product = null;
+        $normalized_vendor_sku = self::normalize_sku($vendor_sku);
         
-        if (!is_array($vendor_products)) return ['count' => 0, 'items' => []];
-        
-        // دریافت تنظیمات فروشنده
-        $cooperation_price_meta_key = $vendor_meta['vendor_cooperation_price_meta_key'] ?? '';
-        $vendor_currency = $vendor_meta['vendor_currency'] ?? 'toman';
-        $conversion_percent = floatval($vendor_meta['vendor_price_conversion_percent'] ?? 0);
-        
-        foreach ($vendor_products as $vendor_sku => $vendor_product) {
-            // پیدا کردن محصول محلی منطبق با نرمال سازی SKU
-            $local_product = null;
-            $normalized_vendor_sku = self::normalize_sku($vendor_sku);
-            
-            foreach ($local_products as $local_sku => $local_product_data) {
-                if (self::normalize_sku($local_sku) === $normalized_vendor_sku) {
-                    $local_product = $local_product_data;
-                    break;
-                }
-            }
-            
-            if (!$local_product) continue;
-            
-            // دریافت قیمت از فروشنده
-            $vendor_price = self::get_vendor_product_price($vendor_product, $cooperation_price_meta_key, $vendor_currency);
-            
-            // اعمال درصد تبدیل اگر وجود دارد
-            if ($conversion_percent > 0) {
-                $vendor_price = $vendor_price * (1 + ($conversion_percent / 100));
-            }
-            
-            $local_vendor_price = floatval($local_product['vendor_price'] ?? 0);
-            
-            // فقط اگر هر دو قیمت داشته باشند مقایسه کن
-            if ($vendor_price > 0 && $local_vendor_price > 0) {
-                // اختلاف بیشتر از 1000 تومان یا 5% (هرکدام بزرگتر است)
-                $absolute_difference = abs($vendor_price - $local_vendor_price);
-                $percentage_difference = ($absolute_difference / $local_vendor_price) * 100;
-                
-                $threshold = max(1000, $local_vendor_price * 0.05); // 1000 تومان یا 5%
-                
-                if ($absolute_difference > $threshold) {
-                    $mismatch[] = [
-                        'id' => $local_product['ID'],
-                        'sku' => $vendor_sku,
-                        'title' => $local_product['post_title'],
-                        'vendor_price' => $vendor_price,
-                        'local_price' => $local_vendor_price,
-                        'difference' => $vendor_price - $local_vendor_price,
-                        'percentage_diff' => round($percentage_difference, 2),
-                        'price_source' => !empty($cooperation_price_meta_key) ? 'cooperation_meta' : 'regular_price',
-                        'vendor_currency' => $vendor_currency,
-                        'conversion_applied' => $conversion_percent > 0
-                    ];
-                }
+        foreach ($local_products as $local_sku => $local_product_data) {
+            if (self::normalize_sku($local_sku) === $normalized_vendor_sku) {
+                $local_product = $local_product_data;
+                break;
             }
         }
         
-        return [
-            'count' => count($mismatch),
-            'items' => $mismatch
-        ];
+        if (!$local_product) continue;
+        
+        // دریافت قیمت همکاری از فروشنده
+        $vendor_cooperation_price = self::get_cooperation_price_from_vendor($vendor_product, $cooperation_price_meta_key);
+        
+        // تبدیل به تومان اگر واحد پول ریال است
+        if ($vendor_currency === 'rial' && $vendor_cooperation_price > 0) {
+            $vendor_cooperation_price = $vendor_cooperation_price / 10; // تبدیل ریال به تومان
+        }
+        
+        // قیمت فروشنده در سایت ما (_seller_list_price)
+        $local_seller_price = floatval($local_product['vendor_price'] ?? 0);
+        
+        // فقط اگر هر دو قیمت همکاری موجود باشند مقایسه کن
+        if ($vendor_cooperation_price > 0 && $local_seller_price > 0) {
+            // اختلاف بیشتر از 1000 تومان یا 5% (هرکدام بزرگتر است)
+            $absolute_difference = abs($vendor_cooperation_price - $local_seller_price);
+            $percentage_difference = ($absolute_difference / $local_seller_price) * 100;
+            
+            $threshold = max(1000, $local_seller_price * 0.05); // 1000 تومان یا 5%
+            
+            if ($absolute_difference > $threshold) {
+                $mismatch[] = [
+                    'id' => $local_product['ID'],
+                    'sku' => $vendor_sku,
+                    'title' => $local_product['post_title'],
+                    'vendor_cooperation_price' => $vendor_cooperation_price,
+                    'local_seller_price' => $local_seller_price,
+                    'difference' => $vendor_cooperation_price - $local_seller_price,
+                    'percentage_diff' => round($percentage_difference, 2),
+                    'vendor_currency' => $vendor_currency
+                ];
+            }
+        }
+    }
+    
+    return [
+        'count' => count($mismatch),
+        'items' => $mismatch
+    ];
+}
+
+    /**
+     * دریافت قیمت همکاری از محصول فروشنده بر اساس کلید متا
+     */
+    private static function get_cooperation_price_from_vendor($vendor_product, $cooperation_meta_key) {
+    $price = 0;
+    
+    // جستجو در meta_data برای پیدا کردن قیمت همکاری
+    if (isset($vendor_product['meta_data']) && is_array($vendor_product['meta_data'])) {
+        foreach ($vendor_product['meta_data'] as $meta_item) {
+            if (isset($meta_item['key']) && $meta_item['key'] === $cooperation_meta_key) {
+                $price = floatval($meta_item['value'] ?? 0);
+                break;
+            }
+        }
+    }
+    
+    return $price;
+}
+
+    /**
+     * دریافت قیمت اصلی از فروشنده بدون تبدیل ارز
+     */
+    private static function get_vendor_product_price_original($vendor_product, $cooperation_price_meta_key) {
+        $price = 0;
+        
+        // 1. اولویت با قیمت همکاری از متا فیلد مشخص شده
+        if (!empty($cooperation_price_meta_key)) {
+            $price = self::get_price_from_meta_data($vendor_product, $cooperation_price_meta_key);
+        }
+        
+        // 2. اگر قیمت همکاری پیدا نشد، از قیمت معمولی استفاده کن
+        if ($price <= 0 && isset($vendor_product['price'])) {
+            $price = floatval($vendor_product['price']);
+        }
+        
+        // 3. اگر هنوز قیمتی نداریم، از regular_price استفاده کن
+        if ($price <= 0 && isset($vendor_product['regular_price'])) {
+            $price = floatval($vendor_product['regular_price']);
+        }
+        
+        return $price;
     }
     
     /**
@@ -709,108 +766,100 @@ class Admin_Debug_Vendor_Tab {
     }
     
     private static function render_mismatch_products_html($data, $type) {
-        ob_start();
-        $title = $type === 'price' ? 
-            '💰 محصولات با قیمت همکاری مغایر' : 
-            '📊 محصولات با وضعیت موجودی مغایر';
-        ?>
-        <div class="card full-width-card">
-            <h3><?php echo $title; ?> (<?php echo $data['count']; ?> مورد)</h3>
-            
-            <?php if ($data['count'] > 0): ?>
-                <div style="margin-bottom: 15px;">
-                    <button type="button" class="button button-secondary copy-all-btn" 
-                            data-content="<?php echo esc_attr(implode(', ', array_column($data['items'], 'id'))); ?>">
-                        📋 کپی کلیه شناسه‌ها
-                    </button>
-                    <span class="copy-status" style="margin-right: 10px; color: #28a745; font-weight: bold;"></span>
-                </div>
-                
-                <div style="max-height: 300px; overflow-y: auto;">
-                    <table class="wp-list-table widefat fixed striped">
-                        <thead>
-                            <tr>
-                                <th>شناسه</th>
-                                <th>SKU</th>
-                                <th>عنوان</th>
-                                <?php if ($type === 'price'): ?>
-                                    <th>قیمت فروشنده</th>
-                                    <th>قیمت محلی</th>
-                                    <th>اختلاف</th>
-                                    <th>جزئیات</th>
-                                <?php else: ?>
-                                    <th>موجودی فروشنده</th>
-                                    <th>موجودی محلی</th>
-                                <?php endif; ?>
-                                <th>عملیات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($data['items'] as $item): ?>
-                                <tr>
-                                    <td><?php echo $item['id']; ?></td>
-                                    <td><?php echo esc_html($item['sku']); ?></td>
-                                    <td><?php echo esc_html($item['title']); ?></td>
-                                    <?php if ($type === 'price'): ?>
-                                        <td><?php echo number_format($item['vendor_price']); ?> تومان</td>
-                                        <td><?php echo number_format($item['local_price']); ?> تومان</td>
-                                        <td style="color: <?php echo $item['difference'] > 0 ? '#dc2626' : '#15803d'; ?>">
-                                            <?php echo $item['difference'] > 0 ? '+' : ''; ?><?php echo number_format($item['difference']); ?> تومان
-                                            <br><small>(<?php echo $item['percentage_diff']; ?>%)</small>
-                                        </td>
-                                        <td>
-                                            <small>
-                                                منبع: <?php echo $item['price_source'] === 'cooperation_meta' ? 'متای همکاری' : 'قیمت عادی'; ?><br>
-                                                ارز: <?php echo $item['vendor_currency'] === 'rial' ? 'ریال' : 'تومان'; ?>
-                                                <?php if ($item['conversion_applied']): ?><br>🔧 تبدیل اعمال شده<?php endif; ?>
-                                            </small>
-                                        </td>
-                                    <?php else: ?>
-                                        <td>
-                                            <span class="stock-badge <?php echo $item['vendor_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
-                                                <?php echo $item['vendor_stock']; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="stock-badge <?php echo $item['local_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
-                                                <?php echo $item['local_stock']; ?>
-                                            </span>
-                                        </td>
-                                    <?php endif; ?>
-                                    <td>
-                                        <button type="button" class="button copy-single-btn" data-content="<?php echo $item['id']; ?>" style="font-size: 12px; padding: 4px 8px;">
-                                            کپی شناسه
-                                        </button>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php else: ?>
-                <p style="color: #28a745; padding: 15px; background: #f0fdf4; border-radius: 4px;">✅ هیچ مغایرتی یافت نشد</p>
-            <?php endif; ?>
-        </div>
+    ob_start();
+    $title = $type === 'price' ? 
+        '💰 محصولات با قیمت همکاری مغایر' : 
+        '📊 محصولات با وضعیت موجودی مغایر';
+    ?>
+    <div class="card full-width-card">
+        <h3><?php echo $title; ?> (<?php echo $data['count']; ?> مورد)</h3>
         
-        <style>
-            .stock-badge {
-                padding: 4px 8px;
-                border-radius: 12px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            .stock-badge.instock {
-                background: #dcfce7;
-                color: #15803d;
-            }
-            .stock-badge.outofstock {
-                background: #fee2e2;
-                color: #dc2626;
-            }
-        </style>
-        <?php
-        return ob_get_clean();
-    }
+        <?php if ($data['count'] > 0): ?>
+            <div style="margin-bottom: 15px;">
+                <button type="button" class="button button-secondary copy-all-btn" 
+                        data-content="<?php echo esc_attr(implode(', ', array_column($data['items'], 'id'))); ?>">
+                    📋 کپی کلیه شناسه‌ها
+                </button>
+                <span class="copy-status" style="margin-right: 10px; color: #28a745; font-weight: bold;"></span>
+            </div>
+            
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>شناسه</th>
+                            <th>SKU</th>
+                            <th>عنوان</th>
+                            <?php if ($type === 'price'): ?>
+                                <th>قیمت همکاری فروشنده</th>
+                                <th>قیمت همکاری در سایت ما</th>
+                                <th>اختلاف</th>
+                            <?php else: ?>
+                                <th>موجودی فروشنده</th>
+                                <th>موجودی محلی</th>
+                            <?php endif; ?>
+                            <th>عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($data['items'] as $item): ?>
+                            <tr>
+                                <td><?php echo $item['id']; ?></td>
+                                <td><?php echo esc_html($item['sku']); ?></td>
+                                <td><?php echo esc_html($item['title']); ?></td>
+                                <?php if ($type === 'price'): ?>
+                                    <td><?php echo number_format($item['vendor_cooperation_price']); ?> تومان</td>
+                                    <td><?php echo number_format($item['local_seller_price']); ?> تومان</td>
+                                    <td style="color: <?php echo $item['difference'] > 0 ? '#dc2626' : '#15803d'; ?>">
+                                        <?php echo $item['difference'] > 0 ? '+' : ''; ?><?php echo number_format($item['difference']); ?> تومان
+                                        <br><small>(<?php echo $item['percentage_diff']; ?>%)</small>
+                                    </td>
+                                <?php else: ?>
+                                    <td>
+                                        <span class="stock-badge <?php echo $item['vendor_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
+                                            <?php echo $item['vendor_stock']; ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="stock-badge <?php echo $item['local_stock_normalized'] === 'instock' ? 'instock' : 'outofstock'; ?>">
+                                            <?php echo $item['local_stock']; ?>
+                                        </span>
+                                    </td>
+                                <?php endif; ?>
+                                <td>
+                                    <button type="button" class="button copy-single-btn" data-content="<?php echo $item['id']; ?>" style="font-size: 12px; padding: 4px 8px;">
+                                        کپی شناسه
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php else: ?>
+            <p style="color: #28a745; padding: 15px; background: #f0fdf4; border-radius: 4px;">✅ هیچ مغایرتی یافت نشد</p>
+        <?php endif; ?>
+    </div>
+    
+    <style>
+        .stock-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .stock-badge.instock {
+            background: #dcfce7;
+            color: #15803d;
+        }
+        .stock-badge.outofstock {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+    </style>
+    <?php
+    return ob_get_clean();
+}
     
     private static function render_sync_info_html($sync_info) {
         ob_start();
